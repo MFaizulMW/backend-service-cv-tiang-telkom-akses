@@ -1,0 +1,174 @@
+services:
+
+  # ─────────────────────────────────────────────────────────────
+  # Reverse Proxy
+  # ─────────────────────────────────────────────────────────────
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - app
+    networks:
+      - internal
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────
+  # Admin API (PHP-FPM)
+  # ─────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+      target: app
+    command: php-fpm
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - laravel_storage:/var/www/storage
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────
+  # Queue Worker — scale with: docker compose up --scale worker=5
+  # ─────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+      target: app
+    command: php artisan queue:work --queue=default --tries=${JOB_MAX_RETRIES:-3} --backoff=${JOB_RETRY_DELAY_SECONDS:-30} --max-time=3600
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      inference:
+        condition: service_started
+    networks:
+      - internal
+    volumes:
+      - laravel_storage:/var/www/storage
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ─────────────────────────────────────────────────────────────
+  # Scheduler (single instance — do NOT scale)
+  # ─────────────────────────────────────────────────────────────
+  scheduler:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+      target: app
+    command: php artisan schedule:work
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - laravel_storage:/var/www/storage
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────
+  # Horizon Dashboard (queue monitoring)
+  # ─────────────────────────────────────────────────────────────
+  horizon:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+      target: app
+    command: php artisan horizon
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - laravel_storage:/var/www/storage
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────
+  # Inference Service (FastAPI — INTERNAL ONLY)
+  # ─────────────────────────────────────────────────────────────
+  inference:
+    build:
+      context: ./inference
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      - MODEL_DETECTION_PATH=/app/models/object detection ai.pt
+      - MODEL_SEGMENTATION_PATH=/app/models/segmentation detection ai.pt
+      - REGISTRY_PATH=/app/registry.json
+    volumes:
+      - ./models:/app/models:ro
+      - ./registry.json:/app/registry.json:ro
+    networks:
+      - internal
+    restart: unless-stopped
+    # Inference is NOT exposed to the host — internal only
+
+  # ─────────────────────────────────────────────────────────────
+  # Redis
+  # ─────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────
+  # PostgreSQL
+  # ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-tiang_cv}
+      POSTGRES_USER: ${DB_USERNAME:-tiang_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-tiang_user} -d ${DB_DATABASE:-tiang_cv}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  laravel_storage:

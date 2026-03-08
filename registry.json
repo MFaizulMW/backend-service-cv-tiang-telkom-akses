@@ -1,0 +1,53 @@
+{
+  "models": {
+    "detection": {
+      "path": "models/object detection ai.pt",
+      "version": "1.0",
+      "sha256": "c4be645a44fd75a55c847d42b2bf9501ea6b4f57f93482ef82919deea59d798f"
+    },
+    "segmentation": {
+      "path": "models/segmentation detection ai.pt",
+      "version": "1.0",
+      "sha256": "cdaa681f797fd646f098c678215df52e99928ad2cc0e4a94d6faf553162e1290"
+    }
+  },
+  "measurement_rules": {
+    "structural_labels": [
+      "tapak",
+      "Segmen 1",
+      "Joint_1",
+      "Segmen 2",
+      "Joint_2",
+      "Segmen 3"
+    ],
+    "safety_labels": [
+      { "label": "Batas gali", "confidence_threshold": 0.30 }
+    ],
+    "pole_types": [
+      {
+        "name": "2-segmen",
+        "indicators": [],
+        "required_segments": ["tapak", "Segmen 1", "Joint_1", "Segmen 2"]
+      },
+      {
+        "name": "3-segmen",
+        "indicators": ["Segmen 3", "Joint_2"],
+        "required_segments": [
+          "tapak", "Segmen 1", "Joint_1",
+          "Segmen 2", "Joint_2", "Segmen 3"
+        ]
+      }
+    ],
+    "underground_ratio": 0.20,
+    "coverage_ratio_min": 0.80
+  },
+  "reference_marker": {
+    "detection_label": "reference_marker",
+    "segmentation_label": "Bendera",
+    "default_real_height_cm": 100.0
+  },
+  "confidence_thresholds": {
+    "general": 0.50,
+    "iou": 0.45
+  }
+}

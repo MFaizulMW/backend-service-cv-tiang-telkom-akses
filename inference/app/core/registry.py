@@ -1,0 +1,49 @@
+"""
+Loads and exposes registry.json at startup.
+All detection/measurement rules come from here — nothing is hardcoded.
+"""
+
+import json
+from functools import lru_cache
+from pathlib import Path
+
+from app.core.config import get_settings
+
+
+@lru_cache
+def get_registry() -> dict:
+    path = Path(get_settings().registry_path)
+    with path.open() as f:
+        return json.load(f)
+
+
+def get_structural_labels(registry: dict) -> set[str]:
+    return set(registry["measurement_rules"]["structural_labels"])
+
+
+def get_safety_labels(registry: dict) -> list[dict]:
+    return registry["measurement_rules"]["safety_labels"]
+
+
+def get_pole_types(registry: dict) -> list[dict]:
+    return registry["measurement_rules"]["pole_types"]
+
+
+def get_underground_ratio(registry: dict) -> float:
+    return registry["measurement_rules"]["underground_ratio"]
+
+
+def get_coverage_ratio_min(registry: dict) -> float:
+    return registry["measurement_rules"]["coverage_ratio_min"]
+
+
+def get_reference_marker_config(registry: dict) -> dict:
+    return registry["reference_marker"]
+
+
+def get_general_threshold(registry: dict) -> float:
+    return registry["confidence_thresholds"]["general"]
+
+
+def get_iou_threshold(registry: dict) -> float:
+    return registry["confidence_thresholds"]["iou"]
