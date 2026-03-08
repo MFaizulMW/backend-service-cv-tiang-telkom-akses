@@ -8,15 +8,15 @@ All label logic driven by registry.json.
 import logging
 from typing import Any, Optional
 
-import numpy as np
 from PIL import Image
 
 from app.core.config import get_settings
 from app.core.registry import (
-    get_registry,
-    get_structural_labels,
-    get_safety_labels,
     get_iou_threshold,
+    get_registry,
+    get_safety_labels,
+    get_singleton_labels,
+    get_structural_labels,
 )
 from app.models.yolo_models import get_segmentation_model
 from app.schemas.response import SegmentedObject, SegmentationResult
@@ -65,15 +65,39 @@ def _get_confidence_threshold(label: str, registry: dict) -> float:
     return registry["confidence_thresholds"]["general"]
 
 
+def _enforce_singleton_labels(
+    segments: list[SegmentedObject],
+    singleton_labels: set[str],
+) -> list[SegmentedObject]:
+    """
+    Keep one object per configured label (highest confidence), keep all others.
+    """
+    if not singleton_labels:
+        return segments
+
+    by_label: dict[str, list[SegmentedObject]] = {}
+    for seg in segments:
+        by_label.setdefault(seg.label, []).append(seg)
+
+    result: list[SegmentedObject] = []
+    for label, group in by_label.items():
+        if label in singleton_labels:
+            result.append(max(group, key=lambda x: x.confidence))
+        else:
+            result.extend(group)
+    return result
+
+
 def run_segmentation(image: Image.Image) -> SegmentationResult:
     """Run segmentation; returns raw, deduplicated, and structural segments."""
     registry = get_registry()
     structural_labels = get_structural_labels(registry)
+    singleton_labels = get_singleton_labels(registry, "segmentation")
     iou_threshold = get_iou_threshold(registry)
 
     model = get_segmentation_model()
     results = model.predict(
-        source=np.array(image),
+        source=image,
         conf=0.01,          # very low — we filter manually per label
         iou=iou_threshold,
         verbose=False,
@@ -163,8 +187,12 @@ def filter_by_pole_bbox(
         cx = (seg.bbox_xyxy[0] + seg.bbox_xyxy[2]) / 2.0
         return x_min <= cx <= x_max
 
+    registry = get_registry()
+    singleton_labels = get_singleton_labels(registry, "segmentation")
+
     filtered_dedup = [s for s in segmentation.deduplicated_segments if in_pole_range(s)]
-    filtered_structural = [s for s in segmentation.structural_segments if in_pole_range(s)]
+    filtered_dedup = _enforce_singleton_labels(filtered_dedup, singleton_labels)
+    filtered_structural = [s for s in filtered_dedup if s.label in get_structural_labels(registry)]
 
     excluded = len(segmentation.structural_segments) - len(filtered_structural)
     if excluded:
@@ -178,4 +206,32 @@ def filter_by_pole_bbox(
         raw_segments=segmentation.raw_segments,
         deduplicated_segments=filtered_dedup,
         structural_segments=filtered_structural,
+    )
+
+
+def offset_segmentation_coordinates(
+    segmentation: SegmentationResult,
+    offset_x: float,
+    offset_y: float,
+) -> SegmentationResult:
+    """
+    Translate segmentation geometry from cropped-ROI coordinates back to
+    original-image coordinates.
+    """
+    def offset_segment(seg: SegmentedObject) -> SegmentedObject:
+        x1, y1, x2, y2 = seg.bbox_xyxy
+        shifted_bbox = [x1 + offset_x, y1 + offset_y, x2 + offset_x, y2 + offset_y]
+        shifted_polygon = [[x + offset_x, y + offset_y] for x, y in seg.mask_polygon]
+        return SegmentedObject(
+            label=seg.label,
+            confidence=seg.confidence,
+            bbox_xyxy=shifted_bbox,
+            mask_polygon=shifted_polygon,
+            height_px=seg.height_px,
+        )
+
+    return SegmentationResult(
+        raw_segments=[offset_segment(s) for s in segmentation.raw_segments],
+        deduplicated_segments=[offset_segment(s) for s in segmentation.deduplicated_segments],
+        structural_segments=[offset_segment(s) for s in segmentation.structural_segments],
     )

@@ -29,6 +29,7 @@ class InferenceClientService
         string $photoId,
         string $imageUrl,
         ?float $referenceMarkerCm = 100.0,
+        ?string $segmentationMode = null,
         array $metadata = [],
     ): array {
         if ($this->circuitBreaker->isOpen()) {
@@ -45,6 +46,7 @@ class InferenceClientService
                     'photo_id'            => $photoId,
                     'image_url'           => $imageUrl,
                     'reference_marker_cm' => $referenceMarkerCm ?? 100.0,
+                    'segmentation_mode'   => $segmentationMode,
                     'metadata'            => $metadata,
                 ]);
 

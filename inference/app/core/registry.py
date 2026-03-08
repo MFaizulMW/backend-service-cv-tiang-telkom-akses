@@ -47,3 +47,30 @@ def get_general_threshold(registry: dict) -> float:
 
 def get_iou_threshold(registry: dict) -> float:
     return registry["confidence_thresholds"]["iou"]
+
+
+def get_fixed_depth_by_nominal_height_cm(registry: dict) -> dict[str, float]:
+    return registry["measurement_rules"].get(
+        "fixed_depth_by_nominal_height_cm",
+        {"700": 140.0, "900": 180.0},
+    )
+
+
+def get_height_consistency_tolerance_cm(registry: dict) -> float:
+    return float(registry["measurement_rules"].get("height_consistency_tolerance_cm", 1.0))
+
+
+def get_singleton_labels(registry: dict, domain: str) -> set[str]:
+    """
+    Return labels that must keep only one object per class after post-processing.
+    Domain: "detection" | "segmentation".
+    """
+    defaults = {
+        "detection": {"pole", "reference_marker"},
+        "segmentation": {"tapak", "Segmen 1", "Joint_1", "Segmen 2", "Joint_2", "Segmen 3", "Bendera"},
+    }
+    cfg = registry.get("postprocess", {}).get("singleton_labels", {})
+    labels = cfg.get(domain)
+    if isinstance(labels, list) and labels:
+        return set(labels)
+    return defaults.get(domain, set())

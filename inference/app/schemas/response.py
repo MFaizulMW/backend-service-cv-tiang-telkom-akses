@@ -46,6 +46,15 @@ class CoverageCheck(BaseModel):
     warning: Optional[str]
 
 
+class HeightConsistencyCheck(BaseModel):
+    nominal_height_cm: Optional[float]
+    fixed_depth_cm: Optional[float]
+    estimated_total_cm: Optional[float]
+    tolerance_cm: float
+    is_suspicious: Optional[bool]
+    warning: Optional[str]
+
+
 class MeasurementResult(BaseModel):
     pole_type: str
     required_segments: List[str]
@@ -56,7 +65,7 @@ class MeasurementResult(BaseModel):
 
     # Pixel measurements (always present)
     total_visible_px: float
-    underground_depth_px: float
+    underground_depth_px: Optional[float]
     total_pole_px: float
 
     # CM measurements (null if no reference marker)
@@ -66,6 +75,7 @@ class MeasurementResult(BaseModel):
     total_pole_cm: Optional[float]
 
     coverage_check: CoverageCheck
+    height_consistency_check: Optional[HeightConsistencyCheck] = None
 
     pole_bbox: Optional[BoundingBox] = None
 

@@ -9,17 +9,18 @@ import math
 from typing import Optional, List
 
 from app.core.registry import (
+    get_coverage_ratio_min,
+    get_fixed_depth_by_nominal_height_cm,
+    get_height_consistency_tolerance_cm,
+    get_reference_marker_config,
     get_registry,
     get_pole_types,
-    get_structural_labels,
-    get_underground_ratio,
-    get_coverage_ratio_min,
-    get_reference_marker_config,
 )
 from app.schemas.response import (
     BoundingBox,
     CoverageCheck,
     DetectionResult,
+    HeightConsistencyCheck,
     MeasurementResult,
     SegmentationResult,
     SegmentedObject,
@@ -83,6 +84,34 @@ def _infer_pole_type(detected_labels: set[str], registry: dict) -> dict:
     return next(pt for pt in pole_types if not pt.get("indicators"))
 
 
+def _resolve_nominal_profile(
+    pole_type_name: str,
+    total_visible_cm: Optional[float],
+    fixed_depth_map: dict[str, float],
+) -> tuple[Optional[float], Optional[float], Optional[str]]:
+    """
+    Resolve nominal pole height (cm) and fixed underground depth (cm).
+
+    Rules requested:
+    - 7m pole => depth 1.4m (140cm), can be 2 or 3 segments
+    - 9m pole => depth 1.8m (180cm), only 2 segments
+    """
+    depth_700 = float(fixed_depth_map.get("700", 140.0))
+    depth_900 = float(fixed_depth_map.get("900", 180.0))
+
+    if pole_type_name == "3-segmen":
+        return 700.0, depth_700, "7m"
+
+    # 2-segmen can be 7m or 9m; choose nearest profile if visible cm exists.
+    if total_visible_cm is not None:
+        vis_target_700 = 700.0 - depth_700
+        vis_target_900 = 900.0 - depth_900
+        if abs(total_visible_cm - vis_target_900) < abs(total_visible_cm - vis_target_700):
+            return 900.0, depth_900, "9m"
+
+    return 700.0, depth_700, "7m"
+
+
 def calculate_measurements(
     detection: DetectionResult,
     segmentation: SegmentationResult,
@@ -93,8 +122,9 @@ def calculate_measurements(
     Steps 1–4 (detection, segmentation, filtering, deduplication) are done upstream.
     """
     registry = get_registry()
-    underground_ratio = get_underground_ratio(registry)
     coverage_ratio_min = get_coverage_ratio_min(registry)
+    fixed_depth_map = get_fixed_depth_by_nominal_height_cm(registry)
+    height_tol_cm = get_height_consistency_tolerance_cm(registry)
     ref_cfg = get_reference_marker_config(registry)
 
     structural_segments: list[SegmentedObject] = segmentation.structural_segments
@@ -112,7 +142,10 @@ def calculate_measurements(
     pole_bbox_height_px: Optional[float] = detection.pole_bbox_height_px
     segmentation_height_px = sum(s.height_px for s in structural_segments)
 
-    # Step 7–8 — Trigger 1: missing required segments
+    # Step 7–9 — Fallback policy
+    # Do not fallback solely because required segments are missing.
+    # Use coverage guard as the main fallback trigger so partial but usable
+    # segmentation can remain in segmentation mode.
     measurement_method = "segmentation"
     total_visible_px: float
 
@@ -123,50 +156,49 @@ def calculate_measurements(
         warning=None,
     )
 
-    if missing_segments:
-        measurement_method = "detection_bbox_fallback"
-        total_visible_px = pole_bbox_height_px if pole_bbox_height_px else segmentation_height_px
-        logger.info(
-            "Trigger 1 fired — missing segments: %s. Using bbox fallback.", missing_segments
-        )
-    else:
-        # Step 9 — Trigger 2: coverage ratio guard
-        if pole_bbox_height_px and pole_bbox_height_px > 0:
-            coverage_ratio = segmentation_height_px / pole_bbox_height_px
-            is_partial = coverage_ratio < coverage_ratio_min
+    # Trigger: coverage ratio guard
+    if pole_bbox_height_px and pole_bbox_height_px > 0:
+        coverage_ratio = segmentation_height_px / pole_bbox_height_px
+        is_partial = coverage_ratio < coverage_ratio_min
 
-            if is_partial:
-                unaccounted_px = pole_bbox_height_px - segmentation_height_px
-                unaccounted_pct = (1 - coverage_ratio) * 100
-                warning = (
-                    f"Segments only cover {coverage_ratio * 100:.0f}% of pole bbox. "
-                    f"~{unaccounted_px:.0f}px ({unaccounted_pct:.0f}%) unaccounted. "
-                    f"Possible undetected upper segments. Measurement redirected to bbox detection."
-                )
-                coverage_check = CoverageCheck(
-                    coverage_ratio=round(coverage_ratio, 4),
-                    threshold=coverage_ratio_min,
-                    is_partial_coverage=True,
-                    warning=warning,
-                )
-                measurement_method = "detection_bbox_fallback"
-                total_visible_px = pole_bbox_height_px
-                logger.info("Trigger 2 fired — coverage %.2f < %.2f", coverage_ratio, coverage_ratio_min)
-            else:
-                coverage_check = CoverageCheck(
-                    coverage_ratio=round(coverage_ratio, 4),
-                    threshold=coverage_ratio_min,
-                    is_partial_coverage=False,
-                    warning=None,
-                )
-                total_visible_px = segmentation_height_px
+        if is_partial:
+            unaccounted_px = pole_bbox_height_px - segmentation_height_px
+            unaccounted_pct = (1 - coverage_ratio) * 100
+            warning = (
+                f"Segments only cover {coverage_ratio * 100:.0f}% of pole bbox. "
+                f"~{unaccounted_px:.0f}px ({unaccounted_pct:.0f}%) unaccounted. "
+                f"Possible undetected upper segments. Measurement redirected to bbox detection."
+            )
+            coverage_check = CoverageCheck(
+                coverage_ratio=round(coverage_ratio, 4),
+                threshold=coverage_ratio_min,
+                is_partial_coverage=True,
+                warning=warning,
+            )
+            measurement_method = "detection_bbox_fallback"
+            total_visible_px = pole_bbox_height_px
+            logger.info("Trigger fired — coverage %.2f < %.2f", coverage_ratio, coverage_ratio_min)
         else:
-            # No pole bbox available — use segmentation sum
+            coverage_check = CoverageCheck(
+                coverage_ratio=round(coverage_ratio, 4),
+                threshold=coverage_ratio_min,
+                is_partial_coverage=False,
+                warning=None,
+            )
             total_visible_px = segmentation_height_px
-
-    # Step 10 — Underground and total
-    underground_depth_px = total_visible_px * underground_ratio
-    total_pole_px = total_visible_px + underground_depth_px
+            if missing_segments:
+                coverage_check.warning = (
+                    "Required segments are incomplete, but coverage is still acceptable. "
+                    "Staying in segmentation mode."
+                )
+    else:
+        # No pole bbox available — use segmentation sum
+        total_visible_px = segmentation_height_px
+        if missing_segments:
+            coverage_check.warning = (
+                "Required segments are incomplete, and pole bbox is unavailable. "
+                "Staying in segmentation mode."
+            )
 
     # Step 10b — Tilt angle (pure geometry, uses structural_segments regardless of method)
     tilt_angle_deg = _calculate_tilt(structural_segments)
@@ -181,8 +213,48 @@ def calculate_measurements(
     if ref_height_px and ref_height_px > 0 and reference_marker_cm:
         scale_cm_per_px = reference_marker_cm / ref_height_px
         total_visible_cm = round(total_visible_px * scale_cm_per_px, 2)
-        underground_depth_cm = round(underground_depth_px * scale_cm_per_px, 2)
-        total_pole_cm = round(total_pole_px * scale_cm_per_px, 2)
+
+    # Step 12 — Fixed underground depth by nominal pole profile
+    nominal_height_cm, fixed_depth_cm, nominal_profile = _resolve_nominal_profile(
+        pole_type_name=pole_type_name,
+        total_visible_cm=total_visible_cm,
+        fixed_depth_map=fixed_depth_map,
+    )
+
+    underground_depth_px: Optional[float] = None
+    if scale_cm_per_px and fixed_depth_cm is not None and scale_cm_per_px > 0:
+        underground_depth_px = fixed_depth_cm / scale_cm_per_px
+    underground_depth_cm = round(fixed_depth_cm, 2) if fixed_depth_cm is not None else None
+
+    if underground_depth_px is not None:
+        total_pole_px = total_visible_px + underground_depth_px
+    else:
+        total_pole_px = total_visible_px
+
+    if total_visible_cm is not None and fixed_depth_cm is not None:
+        total_pole_cm = round(total_visible_cm + fixed_depth_cm, 2)
+
+    # Step 13 — Suspicious check against nominal type height
+    height_check_warning = None
+    is_suspicious: Optional[bool] = None
+    if total_pole_cm is not None and nominal_height_cm is not None:
+        is_suspicious = abs(total_pole_cm - nominal_height_cm) > height_tol_cm
+        if is_suspicious:
+            height_check_warning = (
+                f"Estimasi total {total_pole_cm:.2f}cm tidak sesuai profil {nominal_profile} "
+                f"({nominal_height_cm:.0f}cm) dengan toleransi {height_tol_cm:.1f}cm."
+            )
+    elif nominal_height_cm is not None:
+        height_check_warning = "Tidak dapat validasi konsistensi tinggi nominal karena skala cm/px tidak tersedia."
+
+    height_consistency_check = HeightConsistencyCheck(
+        nominal_height_cm=nominal_height_cm,
+        fixed_depth_cm=round(fixed_depth_cm, 2) if fixed_depth_cm is not None else None,
+        estimated_total_cm=total_pole_cm,
+        tolerance_cm=height_tol_cm,
+        is_suspicious=is_suspicious,
+        warning=height_check_warning,
+    )
 
     return MeasurementResult(
         pole_type=pole_type_name,
@@ -191,13 +263,14 @@ def calculate_measurements(
         missing_segments=missing_segments,
         measurement_method=measurement_method,
         total_visible_px=round(total_visible_px, 2),
-        underground_depth_px=round(underground_depth_px, 2),
+        underground_depth_px=round(underground_depth_px, 2) if underground_depth_px is not None else None,
         total_pole_px=round(total_pole_px, 2),
         scale_cm_per_px=round(scale_cm_per_px, 6) if scale_cm_per_px else None,
         total_visible_cm=total_visible_cm,
         underground_depth_cm=underground_depth_cm,
         total_pole_cm=total_pole_cm,
         coverage_check=coverage_check,
+        height_consistency_check=height_consistency_check,
         pole_bbox=detection.pole_bbox,
         tilt_angle_deg=tilt_angle_deg,
     )

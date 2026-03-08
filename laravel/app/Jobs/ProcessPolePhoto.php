@@ -75,6 +75,7 @@ class ProcessPolePhoto implements ShouldQueue
                 photoId:            $this->photoId,
                 imageUrl:           $this->photoUrl,
                 referenceMarkerCm:  100.0, // default; override from metadata if provided
+                segmentationMode:   $this->metadata['segmentation_mode'] ?? null,
                 metadata:           $this->metadata,
             );
 

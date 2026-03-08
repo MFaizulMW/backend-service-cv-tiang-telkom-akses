@@ -7,11 +7,15 @@ Label names come from registry — nothing hardcoded here.
 import logging
 from typing import Optional
 
-import numpy as np
 from PIL import Image
 
-from app.core.config import get_settings
-from app.core.registry import get_registry, get_reference_marker_config, get_general_threshold, get_iou_threshold
+from app.core.registry import (
+    get_general_threshold,
+    get_iou_threshold,
+    get_reference_marker_config,
+    get_registry,
+    get_singleton_labels,
+)
 from app.models.yolo_models import get_detection_model
 from app.schemas.response import BoundingBox, DetectedObject, DetectionResult
 
@@ -45,19 +49,43 @@ def _deduplicate(detections: list[DetectedObject]) -> list[DetectedObject]:
     return result
 
 
+def _enforce_singleton_labels(
+    detections: list[DetectedObject],
+    singleton_labels: set[str],
+) -> list[DetectedObject]:
+    """
+    Keep only one object per configured label (highest confidence).
+    Other labels are kept as-is.
+    """
+    if not singleton_labels:
+        return detections
+
+    by_label: dict[str, list[DetectedObject]] = {}
+    for det in detections:
+        by_label.setdefault(det.label, []).append(det)
+
+    result: list[DetectedObject] = []
+    for label, group in by_label.items():
+        if label in singleton_labels:
+            result.append(max(group, key=lambda x: x.confidence))
+        else:
+            result.extend(group)
+    return result
+
+
 def run_detection(image: Image.Image) -> DetectionResult:
     """Run object detection. Returns pole bbox, reference_marker bbox, all detections."""
     registry = get_registry()
-    s = get_settings()
     conf_threshold = get_general_threshold(registry)
     iou_threshold = get_iou_threshold(registry)
     ref_cfg = get_reference_marker_config(registry)
+    singleton_labels = get_singleton_labels(registry, "detection")
     pole_label = "pole"
     ref_label = ref_cfg["detection_label"]  # "reference_marker"
 
     model = get_detection_model()
     results = model.predict(
-        source=np.array(image),
+        source=image,
         conf=conf_threshold,
         iou=iou_threshold,
         verbose=False,
@@ -65,8 +93,10 @@ def run_detection(image: Image.Image) -> DetectionResult:
 
     pole_bbox: Optional[BoundingBox] = None
     pole_bbox_height_px: Optional[float] = None
+    pole_conf: float = -1.0
     ref_bbox: Optional[BoundingBox] = None
     ref_height_px: Optional[float] = None
+    ref_conf: float = -1.0
     raw_detections: list[DetectedObject] = []
 
     if not results:
@@ -92,19 +122,24 @@ def run_detection(image: Image.Image) -> DetectionResult:
 
         if label == pole_label:
             # Keep highest-confidence pole bbox if multiple detected
-            if pole_bbox is None or confidence > (pole_bbox_height_px or 0):
+            if pole_bbox is None or confidence > pole_conf:
                 pole_bbox = bbox
                 pole_bbox_height_px = bbox.height
+                pole_conf = confidence
 
         elif label == ref_label:
-            if ref_bbox is None or confidence > (ref_height_px or 0):
+            if ref_bbox is None or confidence > ref_conf:
                 ref_bbox = bbox
                 ref_height_px = bbox.height
+                ref_conf = confidence
+
+    deduplicated = _deduplicate(raw_detections)
+    final_detections = _enforce_singleton_labels(deduplicated, singleton_labels)
 
     return DetectionResult(
         pole_bbox=pole_bbox,
         pole_bbox_height_px=pole_bbox_height_px,
         reference_marker_bbox=ref_bbox,
         reference_marker_height_px=ref_height_px,
-        raw_detections=_deduplicate(raw_detections),
+        raw_detections=final_detections,
     )

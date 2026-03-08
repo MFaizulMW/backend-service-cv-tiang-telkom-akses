@@ -8,7 +8,7 @@
     "segmentation": {
       "path": "models/segmentation detection ai.pt",
       "version": "1.0",
-      "sha256": "cdaa681f797fd646f098c678215df52e99928ad2cc0e4a94d6faf553162e1290"
+      "sha256": "c658920b2ef7afb3431136326601b0a8c70834848354fcea314e1bb1a3341d2d"
     }
   },
   "measurement_rules": {
@@ -39,7 +39,12 @@
       }
     ],
     "underground_ratio": 0.20,
-    "coverage_ratio_min": 0.80
+    "coverage_ratio_min": 0.30,
+    "fixed_depth_by_nominal_height_cm": {
+      "700": 140.0,
+      "900": 180.0
+    },
+    "height_consistency_tolerance_cm": 1.0
   },
   "reference_marker": {
     "detection_label": "reference_marker",
@@ -49,5 +54,11 @@
   "confidence_thresholds": {
     "general": 0.50,
     "iou": 0.45
+  },
+  "postprocess": {
+    "singleton_labels": {
+      "detection": ["pole", "reference_marker"],
+      "segmentation": ["tapak", "Segmen 1", "Joint_1", "Segmen 2", "Joint_2", "Segmen 3", "Bendera"]
+    }
   }
 }
