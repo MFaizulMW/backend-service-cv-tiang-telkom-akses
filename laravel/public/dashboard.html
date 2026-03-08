@@ -491,50 +491,36 @@
         'X-Admin-Key': ADMIN_KEY,
     };
 
-    // Mirror Python _deduplicate: same label + overlapping bbox → keep highest confidence
-    // Groups by normalised key (lowercase+underscore) so casing differences don't create separate groups
-    function deduplicateByLabel(segs) {
-        function overlaps(a, b) {
-            if (!a || !b || a.length < 4 || b.length < 4) return false;
-            return a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
-        }
-        const byLabel = {};
-        segs.forEach(s => {
-            const key = (s.label || '').toLowerCase().replace(/ /g, '_');
-            (byLabel[key] = byLabel[key] || []).push(s);
-        });
-        const result = [];
-        Object.values(byLabel).forEach(group => {
-            const sorted = [...group].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-            const kept = [];
-            sorted.forEach(candidate => {
-                if (!kept.some(k => overlaps(candidate.bbox_xyxy, k.bbox_xyxy))) kept.push(candidate);
-            });
-            result.push(...kept);
-        });
-        return result;
-    }
-
-    // Class color map — normalised to lowercase+underscore key for lookup
-    // fill = segmentation mode (semi-transparent), fillD = detection mode (vivid)
+    // Class color map — keys match actual YOLO model label names
     const CLASS_COLORS = {
-        'segmen 1':          { fill: 'rgba(239,68,68,0.45)',    fillD: 'rgba(239,68,68,0.65)',    stroke: '#ef4444', hex: '#ef4444' },
-        'segmen 2':          { fill: 'rgba(34,197,94,0.45)',    fillD: 'rgba(34,197,94,0.65)',    stroke: '#22c55e', hex: '#22c55e' },
-        'segmen 3':          { fill: 'rgba(59,130,246,0.45)',   fillD: 'rgba(59,130,246,0.65)',   stroke: '#3b82f6', hex: '#3b82f6' },
-        'joint_1':           { fill: 'rgba(139,92,246,0.45)',   fillD: 'rgba(139,92,246,0.65)',   stroke: '#8b5cf6', hex: '#8b5cf6' },
-        'joint_2':           { fill: 'rgba(168,85,247,0.45)',   fillD: 'rgba(168,85,247,0.65)',   stroke: '#a855f7', hex: '#a855f7' },
-        'batas_gali':        { fill: 'rgba(245,158,11,0.50)',   fillD: 'rgba(245,158,11,0.70)',   stroke: '#f59e0b', hex: '#f59e0b' },
-        'reference_marker':  { fill: 'rgba(236,72,153,0.50)',   fillD: 'rgba(236,72,153,0.70)',   stroke: '#ec4899', hex: '#ec4899' },
-        'tapak':             { fill: 'rgba(20,184,166,0.45)',   fillD: 'rgba(20,184,166,0.65)',   stroke: '#14b8a6', hex: '#14b8a6' },
-        // Detection-model specific classes
-        'pole':              { fill: 'rgba(99,102,241,0.40)',   fillD: 'rgba(99,102,241,0.60)',   stroke: '#6366f1', hex: '#6366f1' },
+        // Structural segments
+        'Segmen 1':          { fill: 'rgba(239,68,68,0.40)',    stroke: '#ef4444', hex: '#ef4444' },
+        'Segmen 2':          { fill: 'rgba(34,197,94,0.40)',    stroke: '#22c55e', hex: '#22c55e' },
+        'Segmen 3':          { fill: 'rgba(59,130,246,0.40)',   stroke: '#3b82f6', hex: '#3b82f6' },
+        // Joints
+        'Joint_1':           { fill: 'rgba(139,92,246,0.40)',   stroke: '#8b5cf6', hex: '#8b5cf6' },
+        'Joint_2':           { fill: 'rgba(168,85,247,0.40)',   stroke: '#a855f7', hex: '#a855f7' },
+        // Safety
+        'Batas_gali':        { fill: 'rgba(245,158,11,0.45)',   stroke: '#f59e0b', hex: '#f59e0b' },
+        'Batas gali':        { fill: 'rgba(245,158,11,0.45)',   stroke: '#f59e0b', hex: '#f59e0b' },
+        // Reference marker — segmentation label is Bendera, detection label is reference_marker
+        'Bendera':           { fill: 'rgba(236,72,153,0.40)',   stroke: '#ec4899', hex: '#ec4899' },
+        'Reference_marker':  { fill: 'rgba(236,72,153,0.40)',   stroke: '#ec4899', hex: '#ec4899' },
+        'reference_marker':  { fill: 'rgba(236,72,153,0.40)',   stroke: '#ec4899', hex: '#ec4899' },
+        // Foundation
+        'tapak':             { fill: 'rgba(20,184,166,0.40)',   stroke: '#14b8a6', hex: '#14b8a6' },
+        'Tapak':             { fill: 'rgba(20,184,166,0.40)',   stroke: '#14b8a6', hex: '#14b8a6' },
+        // Detection-only
+        'pole':              { fill: 'rgba(148,163,184,0.15)',  stroke: '#94a3b8', hex: '#94a3b8' },
     };
 
     function classColor(label) {
-        if (!label) return { fill: 'rgba(148,163,184,0.35)', fillD: 'rgba(148,163,184,0.55)', stroke: '#94a3b8', hex: '#94a3b8' };
-        // Normalise: lowercase + replace spaces with underscore
-        const key = label.toLowerCase().replace(/ /g, '_');
-        return CLASS_COLORS[key] || { fill: 'rgba(148,163,184,0.35)', fillD: 'rgba(148,163,184,0.55)', stroke: '#94a3b8', hex: '#94a3b8' };
+        if (!label) return { fill: 'rgba(148,163,184,0.35)', stroke: '#94a3b8', hex: '#94a3b8' };
+        // Exact match first
+        if (CLASS_COLORS[label]) return CLASS_COLORS[label];
+        // Fallback: normalize underscores↔spaces
+        const alt = label.includes('_') ? label.replace(/_/g, ' ') : label.replace(/ /g, '_');
+        return CLASS_COLORS[alt] || { fill: 'rgba(148,163,184,0.35)', stroke: '#94a3b8', hex: '#94a3b8' };
     }
 
     // Set today's date as default
@@ -695,51 +681,48 @@
         }
     }
 
-    /* ── Canvas: Draw Overlay ── */
-    // mode: 'segmentation' (mask polygons) | 'detection' (solid bbox rects)
+    /* ── Canvas: Draw Segmentation Overlay ── */
     function drawOverlay(canvas, img, segments, poleBbox, mode) {
         const ctx = canvas.getContext('2d');
 
-        // Scale canvas to image natural size, then CSS scales it down
         canvas.width  = img.naturalWidth;
         canvas.height = img.naturalHeight;
-
-        // Draw original image as background
         ctx.drawImage(img, 0, 0);
 
-        const fontSize = Math.max(12, canvas.width * 0.012);
         const padding  = 4;
+        const fontSize = Math.max(12, canvas.width * 0.012);
+        ctx.font = `bold ${fontSize}px sans-serif`;
+
+        function drawLabel(x1, y1, text, color) {
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            const tw = ctx.measureText(text).width;
+            const tagY = y1 - fontSize - padding * 2;
+            ctx.fillStyle = color;
+            ctx.fillRect(x1, tagY < 0 ? 0 : tagY, tw + padding * 2, fontSize + padding * 2);
+            ctx.fillStyle = '#000';
+            ctx.fillText(text, x1 + padding, (tagY < 0 ? 0 : tagY) + fontSize + padding - 2);
+        }
 
         if (mode === 'detection') {
-            // ── Detection fallback mode: vivid solid bbox per class ──
+            // Object detection mode — solid vivid bboxes
             segments.forEach(seg => {
                 const bbox = seg.bbox_xyxy;
                 if (!bbox || bbox.length < 4) return;
                 const c = classColor(seg.label);
                 const [x1, y1, x2, y2] = bbox;
 
-                // Vivid filled rect
-                ctx.fillStyle = c.fillD;
-                ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
-
-                // Thick solid border
                 ctx.setLineDash([]);
+                ctx.fillStyle = c.fill;
+                ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
                 ctx.strokeStyle = c.stroke;
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 2.5;
                 ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
 
-                // Label tag
                 const label = `${seg.label}${seg.confidence != null ? ' ' + (seg.confidence * 100).toFixed(0) + '%' : ''}`;
-                ctx.font = `bold ${fontSize}px sans-serif`;
-                const tw = ctx.measureText(label).width;
-                ctx.fillStyle = c.stroke;
-                ctx.fillRect(x1, y1 - fontSize - padding * 2, tw + padding * 2, fontSize + padding * 2);
-                ctx.fillStyle = '#fff';
-                ctx.fillText(label, x1 + padding, y1 - padding);
+                drawLabel(x1, y1, label, c.stroke);
             });
-
         } else {
-            // ── Segmentation mode: draw mask polygons + dashed bbox ──
+            // Segmentation mode — mask polygons + dashed bboxes
             segments.forEach(seg => {
                 const poly = seg.mask_polygon;
                 if (!poly || poly.length < 3) return;
@@ -762,25 +745,18 @@
                 const c = classColor(seg.label);
                 const [x1, y1, x2, y2] = bbox;
 
-                // Dashed bbox
                 ctx.setLineDash([6, 4]);
                 ctx.strokeStyle = c.stroke;
                 ctx.lineWidth = 1.5;
                 ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
                 ctx.setLineDash([]);
 
-                // Label tag
                 const label = `${seg.label}${seg.confidence != null ? ' ' + (seg.confidence * 100).toFixed(0) + '%' : ''}`;
-                ctx.font = `bold ${fontSize}px sans-serif`;
-                const tw = ctx.measureText(label).width;
-                ctx.fillStyle = c.stroke;
-                ctx.fillRect(x1, y1 - fontSize - padding * 2, tw + padding * 2, fontSize + padding * 2);
-                ctx.fillStyle = '#000';
-                ctx.fillText(label, x1 + padding, y1 - padding);
+                drawLabel(x1, y1, label, c.stroke);
             });
         }
 
-        // Draw pole bbox outline (always, as reference boundary)
+        // Always draw pole bbox outline (faint white dashed)
         if (poleBbox) {
             const { x1, y1, x2, y2 } = poleBbox;
             ctx.setLineDash([10, 6]);
@@ -809,78 +785,23 @@
 
             const raw         = r.inference_raw ?? {};
             const photoUrl    = raw.photo_url ?? null;
-            const m           = raw.measurement ?? {};
-            const compliance  = raw.compliance  ?? {};
 
-            // Segments used for measurement (for table / stats)
-            const segments = (
-                raw.inference?.segmentation?.structural_segments ??
-                raw.inference?.segmentation?.deduplicated_segments ??
-                raw.segments ??
-                []
-            );
-            const allSegments = segments;
+            // Resolve display segments based on measurement method
+            const measurementMethod = raw.measurement?.measurement_method ?? '';
+            const isDetection = measurementMethod === 'detection_bbox_fallback';
+
+            const allSegments = isDetection
+                // Detection mode: show object detection classes (raw_detections)
+                ? (raw.inference?.detection?.raw_detections ?? [])
+                // Segmentation mode: show all segmentation classes including Bendera & Batas gali
+                : (raw.inference?.segmentation?.deduplicated_segments
+                    ?? raw.inference?.segmentation?.structural_segments
+                    ?? raw.segments
+                    ?? []);
 
             const poleBbox    = raw.inference?.detection?.pole_bbox ?? null;
-
-            // ── Determine overlay mode and segments for canvas ──
-            const measurementMethod   = m.measurement_method ?? '';
-            const isDetectionFallback = measurementMethod === 'detection_bbox_fallback';
-            let overlayMode;
-            let overlaySegments;
-
-            if (isDetectionFallback) {
-                // Detection fallback: show deduplicated raw_detections as solid bbox
-                overlayMode = 'detection';
-                const rawDetections = raw.inference?.detection?.raw_detections ?? [];
-                const mappedDetections = rawDetections.map(d => ({
-                    label:        d.label,
-                    confidence:   d.confidence,
-                    bbox_xyxy:    d.bbox_xyxy,
-                    mask_polygon: [],
-                    height_px:    d.bbox_xyxy ? (d.bbox_xyxy[3] - d.bbox_xyxy[1]) : 0,
-                }));
-                overlaySegments = deduplicateByLabel(mappedDetections);
-            } else {
-                // Segmentation: show structural_segments + inject reference_marker if absent
-                overlayMode = 'segmentation';
-                const structuralSegs = raw.inference?.segmentation?.structural_segments ??
-                                       raw.inference?.segmentation?.deduplicated_segments ??
-                                       raw.segments ?? [];
-
-                const isRef = s => s.label &&
-                    (s.label.toLowerCase().includes('reference') || s.label.toLowerCase().includes('marker'));
-
-                const hasRef = structuralSegs.some(isRef);
-
-                let refExtra = [];
-                if (!hasRef) {
-                    // 1. Try filtered deduplicated_segments
-                    const dedup  = raw.inference?.segmentation?.deduplicated_segments ?? [];
-                    const refSeg = dedup.find(isRef);
-
-                    // 2. Try unfiltered raw_segments (reference_marker may be outside pole bbox filter)
-                    const rawSegs   = raw.inference?.segmentation?.raw_segments ?? [];
-                    const rawRefSeg = rawSegs.find(isRef);
-
-                    if (refSeg) {
-                        refExtra.push(refSeg);
-                    } else if (rawRefSeg) {
-                        refExtra.push(rawRefSeg);
-                    } else if (raw.inference?.detection?.reference_marker_bbox) {
-                        // 3. Fall back to detection bbox
-                        const rb = raw.inference.detection.reference_marker_bbox;
-                        refExtra.push({
-                            label:        'reference_marker',
-                            confidence:   null,
-                            bbox_xyxy:    [rb.x1, rb.y1, rb.x2, rb.y2],
-                            mask_polygon: [],
-                            height_px:    rb.height ?? (rb.y2 - rb.y1),
-                        });
-                    }
-                }
-                overlaySegments = [...structuralSegs, ...refExtra];
-            }
+            const m           = raw.measurement ?? {};
+            const compliance  = raw.compliance  ?? {};
             const notes       = compliance.notes ?? raw.compliance_notes ?? [];
 
             // ── Build Before/After panel HTML ──
@@ -906,8 +827,8 @@
                        <div>Segmentation overlay unavailable.</div>
                    </div>`;
 
-            // ── Legend (based on what's actually shown on canvas) ──
-            const usedLabels = [...new Set(overlaySegments.map(s => s.label).filter(Boolean))];
+            // ── Legend ──
+            const usedLabels = [...new Set(allSegments.map(s => s.label).filter(Boolean))];
             const legendHtml = usedLabels.length > 0 ? `
                 <div class="legend">
                     ${usedLabels.map(l => {
@@ -1048,7 +969,7 @@
                     <div class="image-panel panel-after">
                         <div class="image-panel-label">
                             <div class="dot"></div>
-                            After — ${isDetectionFallback ? 'Object Detection Overlay (fallback)' : 'AI Segmentation Overlay'}
+                            After — AI Segmentation Overlay
                         </div>
                         <div class="image-panel-body">${afterPanel}</div>
                     </div>
@@ -1072,12 +993,12 @@
             `;
 
             // ── Draw canvas after DOM is ready ──
-            if (photoUrl && overlaySegments.length > 0) {
+            if (photoUrl && allSegments.length > 0) {
                 const imgEl    = document.getElementById(beforeId);
                 const canvasEl = document.getElementById(afterId);
 
                 function doDraw() {
-                    drawOverlay(canvasEl, imgEl, overlaySegments, poleBbox, overlayMode);
+                    drawOverlay(canvasEl, imgEl, allSegments, poleBbox, isDetection ? 'detection' : 'segmentation');
                 }
 
                 if (imgEl.complete && imgEl.naturalWidth > 0) {
@@ -1090,7 +1011,7 @@
                              <span style="font-size:11px;color:#475569">${photoUrl}</span></div>`;
                     };
                 }
-            } else if (photoUrl && overlaySegments.length === 0) {
+            } else if (photoUrl && allSegments.length === 0) {
                 // Just show the photo on canvas with no overlay
                 const imgEl    = document.getElementById(beforeId);
                 const canvasEl = document.getElementById(afterId);
