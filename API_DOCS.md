@@ -543,8 +543,10 @@ Overlay canvas bersifat **fleksibel** berdasarkan `measurement_method`:
 
 | `measurement_method` | Source data overlay | Render style |
 |----------------------|---------------------|--------------|
-| `"segmentation"` | `structural_segments` + inject `reference_marker` jika ada | Mask polygon (filled) + dashed bbox |
-| `"detection_bbox_fallback"` | `raw_detections` dari detection block | Solid filled bbox |
+| `"segmentation"` | `structural_segments` + inject `reference_marker` jika ada | Mask polygon (filled) + dashed bbox — **tanpa text label** |
+| `"detection_bbox_fallback"` | `raw_detections` dari detection block | Solid filled bbox — **tanpa text label** |
+
+> **Catatan Render:** Overlay AFTER hanya menampilkan **warna bbox/polygon** per kelas. Tidak ada teks (nama class maupun confidence %) yang dirender di atas canvas — identifikasi kelas dilakukan lewat warna saja (lihat [Label Classes](#label-classes)).
 
 ### Deduplication (wajib diterapkan di frontend)
 
@@ -651,15 +653,7 @@ img.onload = () => {
       ctx.lineWidth = 3;
       ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     }
-
-    // Label tag
-    const label = `${seg.label}${seg.confidence != null ? ' ' + (seg.confidence * 100).toFixed(0) + '%' : ''}`;
-    ctx.font = 'bold 13px sans-serif';
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = color;
-    ctx.fillRect(x1, y1 - 21, tw + 8, 21);
-    ctx.fillStyle = '#fff';
-    ctx.fillText(label, x1 + 4, y1 - 5);
+    // Tidak ada teks/label yang dirender — identifikasi kelas lewat warna saja
   });
 };
 ```
@@ -736,3 +730,5 @@ X-Admin-Key: demo-admin-key-123
 6. **`is_compliant: false`** — terdeteksi `Batas_gali` dengan confidence ≥ 30%. Tiang tersebut memiliki tanda galian yang tidak sesuai standar.
 
 7. **Pagination** di list endpoint per 50 item. Gunakan query `?page=2` dst.
+
+8. **Overlay canvas tidak menampilkan teks** — class name dan confidence score tidak dirender di atas gambar. Identifikasi segmen dilakukan murni dari warna bbox/polygon (lihat tabel [Label Classes](#label-classes)). Ini desain yang disengaja agar tampilan tidak cluttered.
