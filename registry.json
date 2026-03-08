@@ -7,8 +7,8 @@
     },
     "segmentation": {
       "path": "models/segmentation detection ai.pt",
-      "version": "1.0",
-      "sha256": "cdaa681f797fd646f098c678215df52e99928ad2cc0e4a94d6faf553162e1290"
+      "version": "1.1",
+      "sha256": "c658920b2ef7afb3431136326601b0a8c70834848354fcea314e1bb1a3341d2d"
     }
   },
   "measurement_rules": {
