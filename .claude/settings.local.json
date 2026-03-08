@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(docker compose exec app php artisan queue:flush)",
-      "Bash(docker compose exec app php artisan queue:clear --queue=default)",
-      "Bash(docker compose cp laravel/public/dashboard.html nginx://var/www/public/dashboard.html)"
-    ]
-  }
-}

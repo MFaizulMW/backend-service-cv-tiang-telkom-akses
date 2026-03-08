@@ -1,0 +1,62 @@
+# ─── Environment & Secrets ───────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.secret
+*.key
+*.pem
+*.p12
+*.pfx
+
+# ─── Claude Code ─────────────────────────────────────────────────────────────
+.claude/
+
+# ─── AI Model Files ──────────────────────────────────────────────────────────
+models/*.pt
+models/*.onnx
+models/*.engine
+models/*.pth
+models/*.bin
+models/*.bak*
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Laravel / PHP ───────────────────────────────────────────────────────────
+laravel/vendor/
+laravel/node_modules/
+laravel/storage/logs/*.log
+laravel/storage/framework/cache/
+laravel/storage/framework/sessions/
+laravel/storage/framework/views/
+laravel/bootstrap/cache/*.php
+laravel/.env
+laravel/.env.local
+
+# ─── Docker ──────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ─── OS & Editor ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+.idea/
+.vscode/settings.json
+
+# ─── Logs & Temp ─────────────────────────────────────────────────────────────
+*.log
+tmp/
+temp/
