@@ -69,6 +69,10 @@ class MeasurementResult(BaseModel):
 
     pole_bbox: Optional[BoundingBox] = None
 
+    # Tilt analysis (null if < 2 structural segments)
+    # Positive = leans right, negative = leans left (from viewer's perspective)
+    tilt_angle_deg: Optional[float] = None
+
 
 class ComplianceResult(BaseModel):
     is_compliant: bool

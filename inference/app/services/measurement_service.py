@@ -5,7 +5,8 @@ All rules (pole types, ratios, required segments) come from registry.json.
 """
 
 import logging
-from typing import Optional
+import math
+from typing import Optional, List
 
 from app.core.registry import (
     get_registry,
@@ -25,6 +26,45 @@ from app.schemas.response import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _calculate_tilt(structural_segments: List["SegmentedObject"]) -> Optional[float]:
+    """
+    Calculate pole tilt angle relative to image vertical using centerline regression.
+
+    Fits x = m*y + b through structural segment centers (y = independent axis,
+    since the pole is near-vertical). Returns the deviation from vertical in degrees.
+
+    Convention: positive = leans right, negative = leans left (viewer's perspective).
+    Returns None if fewer than 2 structural segments are available.
+    """
+    # Use all structural segments (Segmen 1/2/3, Joint_1/2, tapak)
+    centers = []
+    for s in structural_segments:
+        bbox = s.bbox_xyxy
+        cx = (bbox[0] + bbox[2]) / 2
+        cy = (bbox[1] + bbox[3]) / 2
+        centers.append((cx, cy))
+
+    if len(centers) < 2:
+        return None
+
+    n = len(centers)
+    sum_y  = sum(c[1] for c in centers)
+    sum_x  = sum(c[0] for c in centers)
+    sum_yy = sum(c[1] ** 2 for c in centers)
+    sum_xy = sum(c[0] * c[1] for c in centers)
+
+    denom = n * sum_yy - sum_y ** 2
+    if abs(denom) < 1e-9:
+        return 0.0  # perfectly vertical — no tilt
+
+    # Regression slope: Δx per Δy
+    # m < 0 → pole leans right (as y decreases going up, x increases)
+    # We negate so that positive output = lean right (intuitive convention)
+    m = (n * sum_xy - sum_x * sum_y) / denom
+    tilt_deg = -math.degrees(math.atan(m))
+    return round(tilt_deg, 2)
 
 
 def _infer_pole_type(detected_labels: set[str], registry: dict) -> dict:
@@ -128,6 +168,9 @@ def calculate_measurements(
     underground_depth_px = total_visible_px * underground_ratio
     total_pole_px = total_visible_px + underground_depth_px
 
+    # Step 10b — Tilt angle (pure geometry, uses structural_segments regardless of method)
+    tilt_angle_deg = _calculate_tilt(structural_segments)
+
     # Step 11 — Unit conversion
     scale_cm_per_px: Optional[float] = None
     total_visible_cm: Optional[float] = None
@@ -156,4 +199,5 @@ def calculate_measurements(
         total_pole_cm=total_pole_cm,
         coverage_check=coverage_check,
         pole_bbox=detection.pole_bbox,
+        tilt_angle_deg=tilt_angle_deg,
     )

@@ -682,7 +682,7 @@
     }
 
     /* ── Canvas: Draw Segmentation Overlay ── */
-    function drawOverlay(canvas, img, segments, poleBbox, mode) {
+    function drawOverlay(canvas, img, segments, poleBbox, mode, tiltAngleDeg, structuralSegs) {
         const ctx = canvas.getContext('2d');
 
         canvas.width  = img.naturalWidth;
@@ -761,6 +761,96 @@
             ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
             ctx.setLineDash([]);
         }
+
+        // ── Tilt visualization (segmentation mode only) ──
+        if (mode !== 'detection' && tiltAngleDeg != null && structuralSegs && structuralSegs.length >= 2) {
+            const STRUCTURAL = ['segmen 1','segmen 2','segmen 3','joint_1','joint_2','tapak'];
+            const filtered = structuralSegs.filter(s =>
+                STRUCTURAL.includes((s.label || '').toLowerCase())
+            );
+            if (filtered.length >= 2) {
+                const centers = filtered.map(s => ({
+                    x: (s.bbox_xyxy[0] + s.bbox_xyxy[2]) / 2,
+                    y: (s.bbox_xyxy[1] + s.bbox_xyxy[3]) / 2,
+                })).sort((a, b) => b.y - a.y); // sort bottom → top
+
+                const anchor    = centers[0];
+                const topCenter = centers[centers.length - 1];
+
+                const absT = Math.abs(tiltAngleDeg);
+                const tc   = absT < 1 ? '#22c55e' : absT < 3 ? '#f59e0b' : '#ef4444';
+
+                // Regression slope from tilt angle (m negative = lean right in image coords)
+                const m_reg = -Math.tan(tiltAngleDeg * Math.PI / 180);
+                const avgX  = centers.reduce((s, c) => s + c.x, 0) / centers.length;
+                const avgY  = centers.reduce((s, c) => s + c.y, 0) / centers.length;
+                const b_reg = avgX - m_reg * avgY;
+
+                // Regression line x-coords at anchor and top
+                const lx1 = m_reg * anchor.y    + b_reg;
+                const lx2 = m_reg * topCenter.y + b_reg;
+
+                // 1. Center dots
+                ctx.setLineDash([]);
+                centers.forEach(c => {
+                    ctx.beginPath();
+                    ctx.arc(c.x, c.y, 5, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                    ctx.fill();
+                    ctx.strokeStyle = tc;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                });
+
+                // 2. Regression centerline
+                ctx.beginPath();
+                ctx.moveTo(lx1, anchor.y);
+                ctx.lineTo(lx2, topCenter.y);
+                ctx.strokeStyle = tc;
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+
+                // 3. Vertical reference line (dashed white)
+                ctx.beginPath();
+                ctx.moveTo(lx1, anchor.y);
+                ctx.lineTo(lx1, topCenter.y);
+                ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([8, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // 4. Arc at anchor showing tilt angle
+                if (absT > 0.2) {
+                    const arcR      = Math.min(55, (anchor.y - topCenter.y) * 0.12);
+                    const vertAngle = -Math.PI / 2;
+                    const poleAngle = vertAngle + tiltAngleDeg * Math.PI / 180;
+                    ctx.beginPath();
+                    ctx.arc(lx1, anchor.y, arcR,
+                        Math.min(vertAngle, poleAngle),
+                        Math.max(vertAngle, poleAngle));
+                    ctx.strokeStyle = tc;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+
+                // 5. Badge bottom-left
+                const dir      = tiltAngleDeg >  0.3 ? '▶ Kanan'
+                               : tiltAngleDeg < -0.3 ? '◀ Kiri' : 'Tegak';
+                const badgeTxt = `Kemiringan  ${absT.toFixed(1)}°  ${dir}`;
+                const bH = 34, bW = 230, bX = 10, bY = canvas.height - bH - 10;
+                ctx.fillStyle = 'rgba(15,17,23,0.82)';
+                if (ctx.roundRect) ctx.roundRect(bX, bY, bW, bH, 6);
+                else ctx.rect(bX, bY, bW, bH);
+                ctx.fill();
+                ctx.strokeStyle = tc;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.fillStyle = tc;
+                ctx.font = 'bold 13px monospace';
+                ctx.fillText(badgeTxt, bX + 10, bY + bH / 2 + 5);
+            }
+        }
     }
 
     /* ── Detail Modal ── */
@@ -837,6 +927,19 @@
                 </div>
             ` : '';
 
+            // ── Tilt helpers ──
+            const tiltDeg      = m.tilt_angle_deg ?? null;
+            const tiltAbs      = tiltDeg != null ? Math.abs(tiltDeg) : null;
+            const tiltColor    = tiltAbs == null ? '#64748b'
+                               : tiltAbs < 1    ? '#22c55e'
+                               : tiltAbs < 3    ? '#f59e0b'
+                               : '#ef4444';
+            const tiltDir      = tiltDeg == null  ? ''
+                               : tiltDeg >  0.3  ? '▶ Kanan'
+                               : tiltDeg < -0.3  ? '◀ Kiri'
+                               : 'Tegak';
+            const tiltDisplay  = tiltDeg != null ? `${tiltAbs.toFixed(1)}°` : '—';
+
             // ── Measurement Cards ──
             const methodBadge = m.measurement_method
                 ? (m.measurement_method.includes('fallback') || m.measurement_method.includes('detection')
@@ -877,6 +980,13 @@
                     <div class="measure-card">
                         <div class="m-label">Segments Found</div>
                         <div class="m-value">${allSegments.length}</div>
+                    </div>
+                    <div class="measure-card">
+                        <div class="m-label">Kemiringan Tiang</div>
+                        <div class="m-value" style="color:${tiltColor};font-size:18px">
+                            ${tiltDisplay}
+                            ${tiltDir ? `<span class="m-unit" style="color:${tiltColor}"> ${tiltDir}</span>` : ''}
+                        </div>
                     </div>
                 </div>
             `;
@@ -989,12 +1099,15 @@
             `;
 
             // ── Draw canvas after DOM is ready ──
+            const structuralSegs = raw.inference?.segmentation?.structural_segments ?? [];
             if (photoUrl && allSegments.length > 0) {
                 const imgEl    = document.getElementById(beforeId);
                 const canvasEl = document.getElementById(afterId);
 
                 function doDraw() {
-                    drawOverlay(canvasEl, imgEl, allSegments, poleBbox, isDetection ? 'detection' : 'segmentation');
+                    drawOverlay(canvasEl, imgEl, allSegments, poleBbox,
+                        isDetection ? 'detection' : 'segmentation',
+                        tiltDeg, isDetection ? [] : structuralSegs);
                 }
 
                 if (imgEl.complete && imgEl.naturalWidth > 0) {

@@ -371,6 +371,7 @@ X-Admin-Key: demo-admin-key-123
         "is_partial_coverage": false,
         "warning": null
       },
+      "tilt_angle_deg": 2.34,
       "pole_bbox": {
         "x1": 188.39, "y1": 80.70,
         "x2": 220.88, "y2": 559.86,
@@ -493,6 +494,7 @@ Triggered automatically by Supabase Database Webhook when a new row is inserted 
 | `coverage_check.coverage_ratio` | float | Yes | Rasio cakupan segmen vs pole bbox |
 | `coverage_check.is_partial_coverage` | bool | Yes | `true` → fallback ke bbox detection |
 | `coverage_check.warning` | string | Yes | Penjelasan fallback jika terjadi |
+| `tilt_angle_deg` | float | **Yes** | Kemiringan tiang terhadap vertikal (derajat). Positif = miring kanan, negatif = miring kiri. `null` jika structural segments < 2 |
 
 ### `inference_raw.compliance`
 
@@ -732,3 +734,18 @@ X-Admin-Key: demo-admin-key-123
 7. **Pagination** di list endpoint per 50 item. Gunakan query `?page=2` dst.
 
 8. **Overlay canvas tidak menampilkan teks** — class name dan confidence score tidak dirender di atas gambar. Identifikasi segmen dilakukan murni dari warna bbox/polygon (lihat tabel [Label Classes](#label-classes)). Ini desain yang disengaja agar tampilan tidak cluttered.
+
+9. **`tilt_angle_deg`** — hasil kalkulasi kemiringan tiang menggunakan *centerline regression* melalui center point semua structural segments. Konvensi:
+   - `> 0` → miring ke **kanan** (dari perspektif viewer)
+   - `< 0` → miring ke **kiri**
+   - `0` → tegak sempurna
+   - `null` → tidak cukup data (structural segments < 2)
+
+   Threshold interpretasi yang direkomendasikan:
+   | Nilai absolut | Status |
+   |---|---|
+   | < 1° | Tegak (aman) |
+   | 1° – 3° | Kemiringan minor |
+   | > 3° | Perlu tindakan |
+
+   Visualisasi tilt tersedia di canvas AFTER (mode segmentation): garis sumbu regression berwarna, garis referensi vertikal dashed, arc sudut di tapak, dan badge kemiringan di pojok kiri bawah.
