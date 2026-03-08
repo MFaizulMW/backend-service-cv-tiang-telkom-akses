@@ -286,49 +286,70 @@ X-Admin-Key: demo-admin-key-123
         ]
       },
       "segmentation": {
+        "raw_segments": [
+          {
+            "label": "Segmen 1",
+            "confidence": 0.94,
+            "bbox_xyxy": [195.42, 299.83, 214.09, 539.13],
+            "mask_polygon": [[204.13, 298.82], [204.13, 303.45], [202.97, 304.61]],
+            "height_px": 239.30
+          }
+        ],
+        "deduplicated_segments": [
+          {
+            "label": "Segmen 1",
+            "confidence": 0.94,
+            "bbox_xyxy": [195.42, 299.83, 214.09, 539.13],
+            "mask_polygon": [[204.13, 298.82], [204.13, 303.45], [202.97, 304.61]],
+            "height_px": 239.30
+          },
+          {
+            "label": "reference_marker",
+            "confidence": 0.83,
+            "bbox_xyxy": [200.34, 343.26, 212.99, 432.32],
+            "mask_polygon": [[200.34, 343.26], [212.99, 343.26], [212.99, 432.32], [200.34, 432.32]],
+            "height_px": 89.06
+          }
+        ],
         "structural_segments": [
           {
             "label": "Segmen 1",
             "confidence": 0.94,
             "bbox_xyxy": [195.42, 299.83, 214.09, 539.13],
-            "mask_polygon": [
-              [204.13, 298.82], [204.13, 303.45], [202.97, 304.61]
-            ],
+            "mask_polygon": [[204.13, 298.82], [204.13, 303.45], [202.97, 304.61]],
             "height_px": 239.30
           },
           {
             "label": "Segmen 2",
             "confidence": 0.90,
             "bbox_xyxy": [207.02, 83.65, 220.48, 284.92],
-            "mask_polygon": [
-              [211.08, 81.07], [211.08, 98.45], [212.23, 99.61]
-            ],
+            "mask_polygon": [[211.08, 81.07], [211.08, 98.45], [212.23, 99.61]],
             "height_px": 201.27
           },
           {
             "label": "tapak",
             "confidence": 0.88,
             "bbox_xyxy": [189.09, 536.76, 212.68, 560.80],
-            "mask_polygon": [
-              [186.75, 535.09], [186.75, 561.73],
-              [213.39, 561.73], [213.39, 535.09]
-            ],
+            "mask_polygon": [[186.75, 535.09], [186.75, 561.73], [213.39, 561.73], [213.39, 535.09]],
             "height_px": 24.05
           },
           {
             "label": "Joint_1",
             "confidence": 0.82,
             "bbox_xyxy": [205.93, 283.71, 213.97, 298.43],
-            "mask_polygon": [
-              [205.29, 280.29], [205.29, 297.66],
-              [213.39, 297.66], [213.39, 280.29]
-            ],
+            "mask_polygon": [[205.29, 280.29], [205.29, 297.66], [213.39, 297.66], [213.39, 280.29]],
             "height_px": 14.72
           }
         ],
-        "all_structural_segments": [],
-        "deduplicated_segments": [],
-        "raw_segments": []
+        "all_structural_segments": [
+          {
+            "label": "Segmen 1",
+            "confidence": 0.94,
+            "bbox_xyxy": [195.42, 299.83, 214.09, 539.13],
+            "mask_polygon": [[204.13, 298.82], [204.13, 303.45], [202.97, 304.61]],
+            "height_px": 239.30
+          }
+        ]
       }
     },
     "measurement": {
@@ -482,11 +503,20 @@ Triggered automatically by Supabase Database Webhook when a new row is inserted 
 | `batas_gali_confidence` | float | Yes | Confidence score jika terdeteksi |
 | `notes` | string[] | No | Daftar catatan compliance |
 
-### `inference_raw.inference.segmentation.structural_segments[]`
+### `inference_raw.inference.segmentation` — Sub-fields
+
+| Field | Deskripsi |
+|-------|-----------|
+| `raw_segments` | Semua segmen dari model YOLO sebelum filter apapun |
+| `deduplicated_segments` | Setelah deduplication (same label + bbox overlap → ambil confidence tertinggi) + filter pole bbox |
+| `structural_segments` | Subset dari `deduplicated_segments` — hanya label struktural (Segmen, Joint, tapak). **Ini yang dipakai untuk pengukuran.** |
+| `all_structural_segments` | Structural segments **sebelum** filter pole bbox — untuk audit/debug jika ada tiang ganda di 1 foto |
+
+### `inference_raw.inference.segmentation.*[]` — Tiap Segment Object
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `label` | string | Nama class dari model YOLO |
+| `label` | string | Nama class dari model YOLO (lihat [Label Classes](#label-classes)) |
 | `confidence` | float | 0.0–1.0 |
 | `bbox_xyxy` | float[4] | `[x1, y1, x2, y2]` dalam piksel koordinat gambar asli |
 | `mask_polygon` | float[][] | `[[x,y], [x,y], ...]` titik polygon mask dalam piksel |
@@ -509,58 +539,127 @@ Triggered automatically by Supabase Database Webhook when a new row is inserted 
 
 ## Rendering Before/After (Petunjuk Frontend)
 
-Untuk merender overlay segmentasi di atas foto asli menggunakan HTML5 Canvas:
+Overlay canvas bersifat **fleksibel** berdasarkan `measurement_method`:
+
+| `measurement_method` | Source data overlay | Render style |
+|----------------------|---------------------|--------------|
+| `"segmentation"` | `structural_segments` + inject `reference_marker` jika ada | Mask polygon (filled) + dashed bbox |
+| `"detection_bbox_fallback"` | `raw_detections` dari detection block | Solid filled bbox |
+
+### Deduplication (wajib diterapkan di frontend)
+
+Sebelum render, deduplikasi terlebih dahulu: **label sama + bbox overlap → ambil yang confidence tertinggi**.
 
 ```javascript
-// 1. Fetch detail result
-const res  = await fetch('/api/admin/results/tiang-12', {
-  headers: { 'X-Admin-Key': 'demo-admin-key-123' }
-});
-const data = await res.json();
+function deduplicateByLabel(segs) {
+  function overlaps(a, b) {
+    return a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+  }
+  const byLabel = {};
+  segs.forEach(s => {
+    const key = (s.label || '').toLowerCase().replace(/ /g, '_');
+    (byLabel[key] = byLabel[key] || []).push(s);
+  });
+  const result = [];
+  Object.values(byLabel).forEach(group => {
+    const sorted = [...group].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    const kept = [];
+    sorted.forEach(c => {
+      if (!kept.some(k => overlaps(c.bbox_xyxy, k.bbox_xyxy))) kept.push(c);
+    });
+    result.push(...kept);
+  });
+  return result;
+}
+```
 
-const photoUrl = data.inference_raw.photo_url;
-const segments = data.inference_raw.inference.segmentation.structural_segments;
-const poleBbox = data.inference_raw.inference.detection.pole_bbox;
+### Contoh implementasi
 
-// 2. Muat gambar asli
+```javascript
+const raw    = data.inference_raw;
+const method = raw.measurement?.measurement_method ?? '';
+const isDetectionFallback = method === 'detection_bbox_fallback';
+
+let overlaySegments;
+
+if (isDetectionFallback) {
+  // Gunakan raw_detections (pole, reference_marker, dll)
+  const rawDetections = raw.inference.detection.raw_detections ?? [];
+  overlaySegments = deduplicateByLabel(rawDetections.map(d => ({
+    label: d.label, confidence: d.confidence,
+    bbox_xyxy: d.bbox_xyxy, mask_polygon: [],
+  })));
+} else {
+  // Gunakan structural_segments + tambahkan reference_marker jika tidak ada
+  const structural = raw.inference.segmentation.structural_segments ?? [];
+  const hasRef = structural.some(s =>
+    s.label?.toLowerCase().includes('reference') || s.label?.toLowerCase().includes('marker')
+  );
+
+  let refExtra = [];
+  if (!hasRef) {
+    // Cari di deduplicated_segments (filtered) atau raw_segments (unfiltered)
+    const dedup  = raw.inference.segmentation.deduplicated_segments ?? [];
+    const rawSeg = raw.inference.segmentation.raw_segments ?? [];
+    const isRef  = s => s.label?.toLowerCase().includes('reference') || s.label?.toLowerCase().includes('marker');
+    const found  = dedup.find(isRef) || rawSeg.find(isRef);
+    if (found) {
+      refExtra.push(found);
+    } else if (raw.inference.detection.reference_marker_bbox) {
+      const rb = raw.inference.detection.reference_marker_bbox;
+      refExtra.push({
+        label: 'reference_marker', confidence: null,
+        bbox_xyxy: [rb.x1, rb.y1, rb.x2, rb.y2], mask_polygon: [],
+      });
+    }
+  }
+  overlaySegments = [...structural, ...refExtra];
+}
+
+// Render ke canvas
 const img = new Image();
 img.crossOrigin = 'anonymous';
-img.src = photoUrl;
+img.src = raw.photo_url;
 img.onload = () => {
   const canvas = document.getElementById('my-canvas');
   const ctx    = canvas.getContext('2d');
-
-  // Sesuaikan ukuran canvas dengan gambar asli
   canvas.width  = img.naturalWidth;
   canvas.height = img.naturalHeight;
-
-  // 3. Gambar foto asli sebagai background
   ctx.drawImage(img, 0, 0);
 
-  // 4. Gambar setiap mask_polygon
-  segments.forEach(seg => {
-    const poly = seg.mask_polygon; // [[x,y], [x,y], ...]
-    if (poly.length < 3) return;
+  overlaySegments.forEach(seg => {
+    const [x1, y1, x2, y2] = seg.bbox_xyxy;
+    const color = CLASS_COLORS[seg.label.toLowerCase().replace(/ /g, '_')] ?? '#94a3b8';
 
-    ctx.beginPath();
-    ctx.moveTo(poly[0][0], poly[0][1]);
-    for (let i = 1; i < poly.length; i++) {
-      ctx.lineTo(poly[i][0], poly[i][1]);
+    if (!isDetectionFallback && seg.mask_polygon?.length >= 3) {
+      // Mode segmentation: gambar mask polygon
+      const poly = seg.mask_polygon;
+      ctx.beginPath();
+      ctx.moveTo(poly[0][0], poly[0][1]);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
+      ctx.closePath();
+      ctx.fillStyle = color + '73';   // 45% opacity
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else {
+      // Mode detection / fallback: gambar solid bbox
+      ctx.fillStyle = color + 'a6';   // 65% opacity
+      ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     }
-    ctx.closePath();
-    ctx.fillStyle   = 'rgba(34,197,94,0.4)'; // warna per label
-    ctx.strokeStyle = '#22c55e';
-    ctx.lineWidth   = 2;
-    ctx.fill();
-    ctx.stroke();
 
-    // 5. Label teks
-    const [x1, y1] = seg.bbox_xyxy;
-    ctx.fillStyle = '#22c55e';
-    ctx.fillRect(x1, y1 - 20, 100, 20);
-    ctx.fillStyle = '#000';
+    // Label tag
+    const label = `${seg.label}${seg.confidence != null ? ' ' + (seg.confidence * 100).toFixed(0) + '%' : ''}`;
     ctx.font = 'bold 13px sans-serif';
-    ctx.fillText(`${seg.label} ${(seg.confidence * 100).toFixed(0)}%`, x1 + 4, y1 - 5);
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = color;
+    ctx.fillRect(x1, y1 - 21, tw + 8, 21);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, x1 + 4, y1 - 5);
   });
 };
 ```
@@ -620,12 +719,20 @@ X-Admin-Key: demo-admin-key-123
 
 ## Catatan Penting untuk Frontend
 
-1. **`total_pole_cm` bisa `null`** — ini terjadi jika reference marker tidak terdeteksi di foto. Gunakan `total_pole_px` sebagai fallback jika hanya butuh proporsi.
+1. **`total_pole_cm` bisa `null`** — terjadi jika `reference_marker` tidak terdeteksi di foto. Gunakan `total_pole_px` sebagai fallback jika hanya butuh proporsi relatif.
 
-2. **`measurement_method`** — jika nilainya `"detection_bbox_fallback"`, artinya segmentasi tidak cukup lengkap (ada segmen yang hilang atau coverage < 80%), sistem otomatis jatuh ke deteksi bbox. Hasil masih valid tapi kurang presisi.
+2. **`measurement_method`** — penentu mode render canvas:
+   - `"segmentation"` → render `structural_segments` dengan mask polygon
+   - `"detection_bbox_fallback"` → render `raw_detections` dengan solid bbox. Terjadi jika segmen tidak lengkap atau coverage < 80%.
 
-3. **`structural_segments`** sudah difilter per tiang target — jika ada 2 tiang dalam 1 foto, hanya segmen tiang utama yang masuk. Field `all_structural_segments` berisi data sebelum filter (untuk debug).
+3. **`structural_segments` vs `all_structural_segments`**:
+   - `structural_segments` — sudah difilter per tiang target (pole bbox ± 50% margin). Pakai ini untuk pengukuran dan render utama.
+   - `all_structural_segments` — sebelum filter. Gunakan untuk debug jika ada 2 tiang dalam 1 foto.
 
-4. **`is_compliant: false`** berarti terdeteksi `Batas_gali` dengan confidence ≥ 30% — tiang tersebut memiliki tanda galian yang tidak sesuai standar.
+4. **`reference_marker` tidak ada di `structural_segments`** — label ini bukan segmen struktural, jadi tidak masuk `structural_segments`. Untuk render overlay, cari di `deduplicated_segments` → `raw_segments` → `detection.reference_marker_bbox` (urutan prioritas). Lihat contoh kode di bagian rendering.
 
-5. **Pagination** di list endpoint per 50 item. Gunakan query `?page=2` dst.
+5. **Deduplication wajib di frontend** — `raw_detections` dari model bisa mengandung deteksi duplikat (sama label, bbox tumpang tindih). Selalu terapkan dedup sebelum render: label sama + overlap → ambil confidence tertinggi.
+
+6. **`is_compliant: false`** — terdeteksi `Batas_gali` dengan confidence ≥ 30%. Tiang tersebut memiliki tanda galian yang tidak sesuai standar.
+
+7. **Pagination** di list endpoint per 50 item. Gunakan query `?page=2` dst.
