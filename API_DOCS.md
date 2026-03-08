@@ -524,6 +524,14 @@ Triggered automatically by Supabase Database Webhook when a new row is inserted 
 | `mask_polygon` | float[][] | `[[x,y], [x,y], ...]` titik polygon mask dalam piksel |
 | `height_px` | float | Tinggi vertikal segment (`y2 - y1`) |
 
+### `inference_raw.inference.overlay`
+
+| Field | Type | Nullable | Description |
+|-------|------|----------|-------------|
+| `mode` | string | No | `"segmentation"` atau `"detection_bbox_fallback"` |
+| `format` | string | No | Format output overlay image (`"image/png"`) |
+| `image_data_url` | string | Yes | Gambar hasil overlay siap pakai (`data:image/png;base64,...`) |
+
 ### Label Classes
 
 | Label | Warna | Deskripsi |
@@ -717,9 +725,12 @@ X-Admin-Key: demo-admin-key-123
 
 1. **`total_pole_cm` bisa `null`** — terjadi jika `reference_marker` tidak terdeteksi di foto. Gunakan `total_pole_px` sebagai fallback jika hanya butuh proporsi relatif.
 
-2. **`measurement_method`** — penentu mode render canvas:
+2. **`measurement_method`** — penentu mode render overlay:
    - `"segmentation"` → render `structural_segments` dengan mask polygon
-   - `"detection_bbox_fallback"` → render `raw_detections` dengan solid bbox. Terjadi jika segmen tidak lengkap atau coverage < 80%.
+   - `"detection_bbox_fallback"` → render `raw_detections` dengan solid bbox. Terjadi jika segmen tidak lengkap atau coverage < 50%.
+
+   Jika ingin langsung menampilkan hasil tanpa canvas frontend, gunakan:
+   - `inference_raw.inference.overlay.image_data_url` sebagai `src` pada tag `<img>`.
 
 3. **`structural_segments` vs `all_structural_segments`**:
    - `structural_segments` — sudah difilter per tiang target (pole bbox ± 50% margin). Pakai ini untuk pengukuran dan render utama.
