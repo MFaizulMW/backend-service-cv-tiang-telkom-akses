@@ -245,6 +245,39 @@ def calculate_measurements(
         scale_cm_per_px = reference_marker_cm / ref_height_px
         total_visible_cm = round(total_visible_px * scale_cm_per_px, 2)
 
+    # Step 11b — Joint height correction (segmentation mode only)
+    # If all structural segments of a pole type are visible but a joint is missing,
+    # add 20cm per missing joint to compensate for the undetected connector piece.
+    # Conditions:
+    #   2-segment: Segmen 1 + Segmen 2 present, Joint_1 missing → +20cm
+    #   3-segment: Segmen 1 + 2 + 3 all present, Joint_1 and/or Joint_2 missing → +20cm each
+    JOINT_HEIGHT_CM = 20.0
+    joint_correction_cm = 0.0
+
+    if measurement_method == "segmentation" and total_visible_cm is not None:
+        has_seg1   = "Segmen 1" in structural_detected
+        has_seg2   = "Segmen 2" in structural_detected
+        has_seg3   = "Segmen 3" in structural_detected
+        has_joint1 = "Joint_1"  in structural_detected
+        has_joint2 = "Joint_2"  in structural_detected
+
+        # 2-segment pole: both segments present, Joint_1 absent
+        if has_seg1 and has_seg2 and not has_seg3 and not has_joint1:
+            joint_correction_cm += JOINT_HEIGHT_CM
+
+        # 3-segment pole: all 3 segments present, missing joints
+        if has_seg1 and has_seg2 and has_seg3:
+            if not has_joint1:
+                joint_correction_cm += JOINT_HEIGHT_CM
+            if not has_joint2:
+                joint_correction_cm += JOINT_HEIGHT_CM
+
+        if joint_correction_cm > 0:
+            total_visible_cm = round(total_visible_cm + joint_correction_cm, 2)
+            if scale_cm_per_px and scale_cm_per_px > 0:
+                total_visible_px += joint_correction_cm / scale_cm_per_px
+            logger.info("Joint correction +%.0fcm applied (segmentation mode)", joint_correction_cm)
+
     # Step 12 — Fixed underground depth by nominal pole profile
     nominal_height_cm, fixed_depth_cm, nominal_profile = _resolve_nominal_profile(
         pole_type_name=pole_type_name,
