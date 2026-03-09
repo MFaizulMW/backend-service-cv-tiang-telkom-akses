@@ -35,8 +35,7 @@ def check_compliance(segmentation: SegmentationResult) -> ComplianceResult:
             if best.confidence >= threshold:
                 is_compliant = False
                 notes.append(
-                    f"'{label}' detected with confidence {best.confidence:.2f} "
-                    f"(threshold: {threshold}). Pole is non-compliant."
+                    f"'{label}' detected (threshold: {threshold}). Pole is non-compliant."
                 )
                 if label == "Batas gali":
                     batas_gali_detected = True

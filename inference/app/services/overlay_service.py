@@ -57,16 +57,18 @@ def _pick_reference_segment(segmentation: SegmentationResult) -> Optional[Segmen
     return None
 
 
-def _draw_detection_overlay(draw: ImageDraw.ImageDraw, detection: DetectionResult) -> None:
+def _draw_detection_overlay(
+    fill_draw: ImageDraw.ImageDraw,
+    outline_draw: ImageDraw.ImageDraw,
+    detection: DetectionResult,
+) -> None:
     for d in detection.raw_detections:
         x1, y1, x2, y2 = d.bbox_xyxy
         color = _color_for_label(d.label)
-        draw.rectangle(
-            [x1, y1, x2, y2],
-            fill=_hex_to_rgba(color, DETECTION_FILL_ALPHA),
-            outline=_hex_to_rgba(color, 255),
-            width=3,
-        )
+        # Semi-transparent fill goes on the isolated fill layer
+        fill_draw.rectangle([x1, y1, x2, y2], fill=_hex_to_rgba(color, DETECTION_FILL_ALPHA))
+        # Solid outline goes directly on the composited canvas
+        outline_draw.rectangle([x1, y1, x2, y2], outline=_hex_to_rgba(color, 255), width=3)
 
 
 def _segment_center(seg: SegmentedObject) -> tuple[float, float]:
@@ -173,7 +175,8 @@ def _draw_tilt_badge(
 
 
 def _draw_batas_gali_overlay(
-    draw: ImageDraw.ImageDraw,
+    fill_draw: ImageDraw.ImageDraw,
+    outline_draw: ImageDraw.ImageDraw,
     segmentation: SegmentationResult,
 ) -> None:
     """Draw batas_gali segments from deduplicated_segments — always, regardless of measurement method."""
@@ -185,19 +188,17 @@ def _draw_batas_gali_overlay(
         x1, y1, x2, y2 = seg.bbox_xyxy
         if len(seg.mask_polygon) >= 3:
             points = [tuple(p) for p in seg.mask_polygon]
-            draw.polygon(points, fill=_hex_to_rgba(color, SEGMENT_FILL_ALPHA), outline=_hex_to_rgba(color, 255))
-            draw.rectangle([x1, y1, x2, y2], outline=_hex_to_rgba(color, 255), width=2)
+            fill_draw.polygon(points, fill=_hex_to_rgba(color, SEGMENT_FILL_ALPHA))
+            outline_draw.polygon(points, outline=_hex_to_rgba(color, 255))
+            outline_draw.rectangle([x1, y1, x2, y2], outline=_hex_to_rgba(color, 255), width=2)
         else:
-            draw.rectangle(
-                [x1, y1, x2, y2],
-                fill=_hex_to_rgba(color, DETECTION_FILL_ALPHA),
-                outline=_hex_to_rgba(color, 255),
-                width=3,
-            )
+            fill_draw.rectangle([x1, y1, x2, y2], fill=_hex_to_rgba(color, DETECTION_FILL_ALPHA))
+            outline_draw.rectangle([x1, y1, x2, y2], outline=_hex_to_rgba(color, 255), width=3)
 
 
 def _draw_segmentation_overlay(
-    draw: ImageDraw.ImageDraw,
+    fill_draw: ImageDraw.ImageDraw,
+    outline_draw: ImageDraw.ImageDraw,
     segmentation: SegmentationResult,
     detection: DetectionResult,
     measurement: MeasurementResult,
@@ -225,18 +226,20 @@ def _draw_segmentation_overlay(
         color = _color_for_label(seg.label)
         if len(seg.mask_polygon) >= 3:
             points = [tuple(p) for p in seg.mask_polygon]
-            draw.polygon(points, fill=_hex_to_rgba(color, SEGMENT_FILL_ALPHA), outline=_hex_to_rgba(color, 255))
-            draw.rectangle([x1, y1, x2, y2], outline=_hex_to_rgba(color, 255), width=2)
+            # Semi-transparent polygon fill on fill layer
+            fill_draw.polygon(points, fill=_hex_to_rgba(color, SEGMENT_FILL_ALPHA))
+            # Solid polygon outline + bbox border on outline layer
+            outline_draw.polygon(points, outline=_hex_to_rgba(color, 255))
+            outline_draw.rectangle([x1, y1, x2, y2], outline=_hex_to_rgba(color, 255), width=2)
         else:
-            draw.rectangle(
-                [x1, y1, x2, y2],
-                fill=_hex_to_rgba(color, DETECTION_FILL_ALPHA),
-                outline=_hex_to_rgba(color, 255),
-                width=3,
-            )
+            # Semi-transparent fill on fill layer
+            fill_draw.rectangle([x1, y1, x2, y2], fill=_hex_to_rgba(color, DETECTION_FILL_ALPHA))
+            # Solid outline on outline layer
+            outline_draw.rectangle([x1, y1, x2, y2], outline=_hex_to_rgba(color, 255), width=3)
 
-    _draw_tilt_guides(draw, structural_segments)
-    _draw_tilt_badge(draw, measurement, image_size)
+    # Tilt guides and badge are fully solid — draw directly on outline layer
+    _draw_tilt_guides(outline_draw, structural_segments)
+    _draw_tilt_badge(outline_draw, measurement, image_size)
 
 
 def build_overlay_data_url(
@@ -248,16 +251,29 @@ def build_overlay_data_url(
     """
     Render overlay image and return it as data URL:
     data:image/png;base64,<...>
+
+    Uses two transparent layers so fills properly blend over the photo:
+      - fill_layer:    semi-transparent colored fills (alpha ~80)
+      - outline_layer: solid borders, lines, badges (alpha 255)
+    Both are alpha_composite'd onto the original photo in order.
     """
     canvas = image.convert("RGBA")
-    draw = ImageDraw.Draw(canvas, "RGBA")
+
+    fill_layer    = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    outline_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    fill_draw    = ImageDraw.Draw(fill_layer, "RGBA")
+    outline_draw = ImageDraw.Draw(outline_layer, "RGBA")
 
     if measurement.measurement_method == "detection_bbox_fallback":
-        _draw_detection_overlay(draw, detection)
+        _draw_detection_overlay(fill_draw, outline_draw, detection)
         # Batas gali always drawn from segmentation regardless of measurement method
-        _draw_batas_gali_overlay(draw, segmentation)
+        _draw_batas_gali_overlay(fill_draw, outline_draw, segmentation)
     else:
-        _draw_segmentation_overlay(draw, segmentation, detection, measurement, canvas.size)
+        _draw_segmentation_overlay(fill_draw, outline_draw, segmentation, detection, measurement, canvas.size)
+
+    # Composite fills first (photo shows through), then solid outlines on top
+    canvas = Image.alpha_composite(canvas, fill_layer)
+    canvas = Image.alpha_composite(canvas, outline_layer)
 
     out = BytesIO()
     canvas.save(out, format="PNG")

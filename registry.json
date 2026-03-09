@@ -44,7 +44,7 @@
       "700": 140.0,
       "900": 180.0
     },
-    "height_consistency_tolerance_cm": 1.0
+    "height_consistency_tolerance_cm": 35.0
   },
   "reference_marker": {
     "detection_label": "reference_marker",
