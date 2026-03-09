@@ -6,7 +6,7 @@
       "sha256": "c4be645a44fd75a55c847d42b2bf9501ea6b4f57f93482ef82919deea59d798f"
     },
     "segmentation": {
-      "path": "models/segmentation detection ai.pt",
+      "path": "models/best.pt",
       "version": "1.0",
       "sha256": "c658920b2ef7afb3431136326601b0a8c70834848354fcea314e1bb1a3341d2d"
     }
@@ -39,7 +39,7 @@
       }
     ],
     "underground_ratio": 0.20,
-    "coverage_ratio_min": 0.30,
+    "coverage_ratio_min": 0.80,
     "fixed_depth_by_nominal_height_cm": {
       "700": 140.0,
       "900": 180.0

@@ -762,8 +762,8 @@
             ctx.setLineDash([]);
         }
 
-        // ── Tilt visualization (segmentation mode only) ──
-        if (mode !== 'detection' && tiltAngleDeg != null && structuralSegs && structuralSegs.length >= 2) {
+        // ── Tilt visualization (always drawn if structural segments available) ──
+        if (tiltAngleDeg != null && structuralSegs && structuralSegs.length >= 2) {
             const STRUCTURAL = ['segmen 1','segmen 2','segmen 3','joint_1','joint_2','tapak'];
             const filtered = structuralSegs.filter(s =>
                 STRUCTURAL.includes((s.label || '').toLowerCase())

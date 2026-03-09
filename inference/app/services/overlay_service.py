@@ -230,6 +230,9 @@ def build_overlay_data_url(
 
     if measurement.measurement_method == "detection_bbox_fallback":
         _draw_detection_overlay(draw, detection)
+        # Tilt always uses segmentation regardless of measurement method
+        _draw_tilt_guides(draw, list(segmentation.structural_segments))
+        _draw_tilt_badge(draw, measurement, canvas.size)
     else:
         _draw_segmentation_overlay(draw, segmentation, detection, measurement, canvas.size)
 
