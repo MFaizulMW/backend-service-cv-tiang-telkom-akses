@@ -7,7 +7,7 @@ class Settings(BaseSettings):
 
     # Models
     model_detection_path: str = "models/object detection ai.pt"
-    model_segmentation_path: str = "models/segmentation detection ai.pt"
+    model_segmentation_path: str = "models/best.pt"
     registry_path: str = "registry.json"
 
     # Internal JWT

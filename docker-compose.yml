@@ -117,7 +117,7 @@ services:
     env_file: .env
     environment:
       - MODEL_DETECTION_PATH=/app/models/object detection ai.pt
-      - MODEL_SEGMENTATION_PATH=/app/models/segmentation detection ai.pt
+      - MODEL_SEGMENTATION_PATH=/app/models/best.pt
       - REGISTRY_PATH=/app/registry.json
     volumes:
       - ./models:/app/models:ro

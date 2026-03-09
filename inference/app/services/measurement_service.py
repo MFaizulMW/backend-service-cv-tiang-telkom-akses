@@ -15,6 +15,7 @@ from app.core.registry import (
     get_reference_marker_config,
     get_registry,
     get_pole_types,
+    get_underground_ratio,
 )
 from app.schemas.response import (
     BoundingBox,
@@ -126,6 +127,7 @@ def calculate_measurements(
     fixed_depth_map = get_fixed_depth_by_nominal_height_cm(registry)
     height_tol_cm = get_height_consistency_tolerance_cm(registry)
     ref_cfg = get_reference_marker_config(registry)
+    underground_ratio = get_underground_ratio(registry)  # e.g. 0.20
 
     structural_segments: list[SegmentedObject] = segmentation.structural_segments
     detected_labels: set[str] = {s.label for s in segmentation.deduplicated_segments}
@@ -214,25 +216,30 @@ def calculate_measurements(
         scale_cm_per_px = reference_marker_cm / ref_height_px
         total_visible_cm = round(total_visible_px * scale_cm_per_px, 2)
 
-    # Step 12 — Fixed underground depth by nominal pole profile
+    # Step 12 — Underground depth via ratio formula
+    # visible = (1 - underground_ratio) × total  →  total = visible / (1 - underground_ratio)
+    # underground = total - visible = visible × underground_ratio / (1 - underground_ratio)
+    visible_fraction = 1.0 - underground_ratio  # 0.80
+
+    underground_depth_px: Optional[float] = None
+    underground_depth_cm: Optional[float] = None
+    total_pole_cm: Optional[float] = None
+
+    if total_visible_cm is not None:
+        total_pole_cm = round(total_visible_cm / visible_fraction, 2)
+        underground_depth_cm = round(total_pole_cm - total_visible_cm, 2)
+
+    if scale_cm_per_px and scale_cm_per_px > 0 and underground_depth_cm is not None:
+        underground_depth_px = underground_depth_cm / scale_cm_per_px
+
+    total_pole_px = total_visible_px + (underground_depth_px if underground_depth_px is not None else 0.0)
+
+    # Nominal profile used only for height consistency check (Step 13)
     nominal_height_cm, fixed_depth_cm, nominal_profile = _resolve_nominal_profile(
         pole_type_name=pole_type_name,
         total_visible_cm=total_visible_cm,
         fixed_depth_map=fixed_depth_map,
     )
-
-    underground_depth_px: Optional[float] = None
-    if scale_cm_per_px and fixed_depth_cm is not None and scale_cm_per_px > 0:
-        underground_depth_px = fixed_depth_cm / scale_cm_per_px
-    underground_depth_cm = round(fixed_depth_cm, 2) if fixed_depth_cm is not None else None
-
-    if underground_depth_px is not None:
-        total_pole_px = total_visible_px + underground_depth_px
-    else:
-        total_pole_px = total_visible_px
-
-    if total_visible_cm is not None and fixed_depth_cm is not None:
-        total_pole_cm = round(total_visible_cm + fixed_depth_cm, 2)
 
     # Step 13 — Suspicious check against nominal type height
     height_check_warning = None
