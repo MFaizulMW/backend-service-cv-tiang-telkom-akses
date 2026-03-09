@@ -143,9 +143,8 @@ def calculate_measurements(
     segmentation_height_px = sum(s.height_px for s in structural_segments)
 
     # Step 7–9 — Fallback policy
-    # Do not fallback solely because required segments are missing.
-    # Use coverage guard as the main fallback trigger so partial but usable
-    # segmentation can remain in segmentation mode.
+    # Trigger 1: coverage ratio guard
+    # Trigger 2: Segmen 1 or Segmen 2 not detected (critical structural segments)
     measurement_method = "segmentation"
     total_visible_px: float
 
@@ -156,19 +155,41 @@ def calculate_measurements(
         warning=None,
     )
 
-    # Trigger: coverage ratio guard
+    # Trigger 2: missing critical segments
+    # - Segmen 1 or Segmen 2 always required
+    # - Segmen 3 required if Joint_2 detected (implies 3-segmen pole)
+    critical_missing = [s for s in ["Segmen 1", "Segmen 2"] if s not in structural_detected]
+    if "Joint_2" in structural_detected and "Segmen 3" not in structural_detected:
+        critical_missing.append("Segmen 3")
+
+    # Trigger 1: coverage ratio guard
     if pole_bbox_height_px and pole_bbox_height_px > 0:
         coverage_ratio = segmentation_height_px / pole_bbox_height_px
         is_partial = coverage_ratio < coverage_ratio_min
 
-        if is_partial:
+        if is_partial or critical_missing:
             unaccounted_px = pole_bbox_height_px - segmentation_height_px
-            unaccounted_pct = (1 - coverage_ratio) * 100
-            warning = (
-                f"Segments only cover {coverage_ratio * 100:.0f}% of pole bbox. "
-                f"~{unaccounted_px:.0f}px ({unaccounted_pct:.0f}%) unaccounted. "
-                f"Possible undetected upper segments. Measurement redirected to bbox detection."
-            )
+            unaccounted_pct = (1 - coverage_ratio) * 100 if pole_bbox_height_px > 0 else 0
+
+            if critical_missing and not is_partial:
+                warning = (
+                    f"Segmen tidak terdeteksi: {', '.join(critical_missing)}. "
+                    f"Measurement redirected to bbox detection."
+                )
+            elif critical_missing and is_partial:
+                warning = (
+                    f"Segments only cover {coverage_ratio * 100:.0f}% of pole bbox. "
+                    f"~{unaccounted_px:.0f}px ({unaccounted_pct:.0f}%) unaccounted. "
+                    f"Segmen tidak terdeteksi: {', '.join(critical_missing)}. "
+                    f"Measurement redirected to bbox detection."
+                )
+            else:
+                warning = (
+                    f"Segments only cover {coverage_ratio * 100:.0f}% of pole bbox. "
+                    f"~{unaccounted_px:.0f}px ({unaccounted_pct:.0f}%) unaccounted. "
+                    f"Possible undetected upper segments. Measurement redirected to bbox detection."
+                )
+
             coverage_check = CoverageCheck(
                 coverage_ratio=round(coverage_ratio, 4),
                 threshold=coverage_ratio_min,
@@ -177,7 +198,10 @@ def calculate_measurements(
             )
             measurement_method = "detection_bbox_fallback"
             total_visible_px = pole_bbox_height_px
-            logger.info("Trigger fired — coverage %.2f < %.2f", coverage_ratio, coverage_ratio_min)
+            logger.info(
+                "Trigger fired — coverage %.2f < %.2f, critical_missing=%s",
+                coverage_ratio, coverage_ratio_min, critical_missing,
+            )
         else:
             coverage_check = CoverageCheck(
                 coverage_ratio=round(coverage_ratio, 4),
@@ -194,7 +218,14 @@ def calculate_measurements(
     else:
         # No pole bbox available — use segmentation sum
         total_visible_px = segmentation_height_px
-        if missing_segments:
+        if critical_missing:
+            measurement_method = "detection_bbox_fallback"
+            coverage_check.warning = (
+                f"Segmen tidak terdeteksi: {', '.join(critical_missing)}. "
+                f"Pole bbox unavailable — measurement accuracy may be limited."
+            )
+            logger.info("Trigger fired — critical_missing=%s, no pole bbox", critical_missing)
+        elif missing_segments:
             coverage_check.warning = (
                 "Required segments are incomplete, and pole bbox is unavailable. "
                 "Staying in segmentation mode."

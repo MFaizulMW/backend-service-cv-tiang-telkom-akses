@@ -172,6 +172,30 @@ def _draw_tilt_badge(
     draw.text((x1 + pad_x, y1 + pad_y), text, fill=_hex_to_rgba("#fbbf24", 255), font=font)
 
 
+def _draw_batas_gali_overlay(
+    draw: ImageDraw.ImageDraw,
+    segmentation: SegmentationResult,
+) -> None:
+    """Draw batas_gali segments from deduplicated_segments — always, regardless of measurement method."""
+    batas_labels = {"batas_gali", "batas gali"}
+    for seg in segmentation.deduplicated_segments:
+        if _normalize_label(seg.label) not in batas_labels:
+            continue
+        color = _color_for_label(seg.label)
+        x1, y1, x2, y2 = seg.bbox_xyxy
+        if len(seg.mask_polygon) >= 3:
+            points = [tuple(p) for p in seg.mask_polygon]
+            draw.polygon(points, fill=_hex_to_rgba(color, SEGMENT_FILL_ALPHA), outline=_hex_to_rgba(color, 255))
+            draw.rectangle([x1, y1, x2, y2], outline=_hex_to_rgba(color, 255), width=2)
+        else:
+            draw.rectangle(
+                [x1, y1, x2, y2],
+                fill=_hex_to_rgba(color, DETECTION_FILL_ALPHA),
+                outline=_hex_to_rgba(color, 255),
+                width=3,
+            )
+
+
 def _draw_segmentation_overlay(
     draw: ImageDraw.ImageDraw,
     segmentation: SegmentationResult,
@@ -230,6 +254,8 @@ def build_overlay_data_url(
 
     if measurement.measurement_method == "detection_bbox_fallback":
         _draw_detection_overlay(draw, detection)
+        # Batas gali always drawn from segmentation regardless of measurement method
+        _draw_batas_gali_overlay(draw, segmentation)
     else:
         _draw_segmentation_overlay(draw, segmentation, detection, measurement, canvas.size)
 
