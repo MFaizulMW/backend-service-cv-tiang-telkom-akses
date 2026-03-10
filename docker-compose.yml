@@ -35,6 +35,11 @@ services:
     volumes:
       - laravel_storage:/var/www/storage
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   # ─────────────────────────────────────────────────────────────
   # Queue Worker — scale with: docker compose up --scale worker=5
@@ -52,7 +57,7 @@ services:
       redis:
         condition: service_healthy
       inference:
-        condition: service_started
+        condition: service_healthy
     networks:
       - internal
     volumes:
@@ -85,6 +90,11 @@ services:
     volumes:
       - laravel_storage:/var/www/storage
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
 
   # ─────────────────────────────────────────────────────────────
   # Horizon Dashboard (queue monitoring)
@@ -106,6 +116,11 @@ services:
     volumes:
       - laravel_storage:/var/www/storage
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
 
   # ─────────────────────────────────────────────────────────────
   # Inference Service (FastAPI — INTERNAL ONLY)
@@ -126,6 +141,17 @@ services:
       - internal
     restart: unless-stopped
     # Inference is NOT exposed to the host — internal only
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
 
   # ─────────────────────────────────────────────────────────────
   # Redis

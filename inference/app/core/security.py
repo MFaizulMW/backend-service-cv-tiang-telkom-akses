@@ -6,6 +6,8 @@ This service validates the token and marks the JTI as used in Redis
 to prevent replay attacks within the token's lifetime.
 """
 
+import time
+
 import jwt
 import redis as redis_lib
 from fastapi import HTTPException, Security
@@ -15,16 +17,23 @@ from app.core.config import get_settings
 
 _bearer = HTTPBearer()
 
+# Module-level connection pool — shared across all requests
+_redis_pool: redis_lib.ConnectionPool | None = None
+
 
 def _get_redis() -> redis_lib.Redis:
+    global _redis_pool
     s = get_settings()
-    return redis_lib.Redis(
-        host=s.redis_host,
-        port=s.redis_port,
-        password=s.redis_password or None,
-        db=s.redis_db,
-        decode_responses=True,
-    )
+    if _redis_pool is None:
+        _redis_pool = redis_lib.ConnectionPool(
+            host=s.redis_host,
+            port=s.redis_port,
+            password=s.redis_password or None,
+            db=s.redis_db,
+            decode_responses=True,
+            max_connections=10,
+        )
+    return redis_lib.Redis(connection_pool=_redis_pool)
 
 
 def validate_service_token(
@@ -57,10 +66,9 @@ def validate_service_token(
     if r.exists(replay_key):
         raise HTTPException(status_code=401, detail="Token already used (replay detected)")
 
-    # Mark JTI as consumed for its remaining TTL + a small buffer
+    # Mark JTI as consumed for its remaining TTL + buffer for clock skew / network latency
     exp = payload.get("exp", 0)
-    import time
-    ttl = max(1, int(exp - time.time()) + 5)
+    ttl = max(60, int(exp - time.time()) + 30)
     r.setex(replay_key, ttl, "1")
 
     return payload

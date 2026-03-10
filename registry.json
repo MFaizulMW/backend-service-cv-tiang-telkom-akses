@@ -39,12 +39,21 @@
       }
     ],
     "underground_ratio": 0.20,
-    "coverage_ratio_min": 0.30,
+    "coverage_ratio_min": 0.85,
+    "joint_height_correction_cm": 20.0,
     "fixed_depth_by_nominal_height_cm": {
       "700": 140.0,
       "900": 180.0
     },
-    "height_consistency_tolerance_cm": 35.0
+    "height_consistency_tolerance_cm": 35.0,
+    "pole_bbox_filter": {
+      "margin_ratio": 0.5,
+      "min_margin_px": 20.0
+    },
+    "image_download": {
+      "max_size_bytes": 52428800,
+      "timeout_seconds": 30
+    }
   },
   "reference_marker": {
     "detection_label": "reference_marker",

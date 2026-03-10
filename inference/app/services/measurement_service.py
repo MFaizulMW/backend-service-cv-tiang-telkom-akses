@@ -12,6 +12,7 @@ from app.core.registry import (
     get_coverage_ratio_min,
     get_fixed_depth_by_nominal_height_cm,
     get_height_consistency_tolerance_cm,
+    get_joint_height_correction_cm,
     get_reference_marker_config,
     get_registry,
     get_pole_types,
@@ -247,11 +248,11 @@ def calculate_measurements(
 
     # Step 11b — Joint height correction (segmentation mode only)
     # If all structural segments of a pole type are visible but a joint is missing,
-    # add 20cm per missing joint to compensate for the undetected connector piece.
+    # add the configured height per missing joint to compensate for the undetected connector.
     # Conditions:
-    #   2-segment: Segmen 1 + Segmen 2 present, Joint_1 missing → +20cm
-    #   3-segment: Segmen 1 + 2 + 3 all present, Joint_1 and/or Joint_2 missing → +20cm each
-    JOINT_HEIGHT_CM = 20.0
+    #   2-segment: Segmen 1 + Segmen 2 present, Joint_1 missing → +joint_height_cm
+    #   3-segment: Segmen 1 + 2 + 3 all present, Joint_1 and/or Joint_2 missing → +joint_height_cm each
+    JOINT_HEIGHT_CM = get_joint_height_correction_cm(registry)
     joint_correction_cm = 0.0
 
     if measurement_method == "segmentation" and total_visible_cm is not None:

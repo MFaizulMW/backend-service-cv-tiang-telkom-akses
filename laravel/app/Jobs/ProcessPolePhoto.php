@@ -85,8 +85,19 @@ class ProcessPolePhoto implements ShouldQueue
             // Persist result
             $storage->store($this->photoId, $this->jobId, $result);
 
-            // Optional callback to Telkom
-            $telkomApi->sendCallback($this->photoId, $result);
+            // Optional callback to Telkom — non-blocking: failure must not fail the job
+            try {
+                $telkomApi->sendCallback($this->photoId, $result);
+            } catch (\Throwable $callbackError) {
+                $audit->log('job.callback.failed', 'warning', [
+                    'error' => $callbackError->getMessage(),
+                ], $this->jobId, $this->photoId);
+                Log::warning('ProcessPolePhoto: sendCallback failed (non-fatal)', [
+                    'job_id'   => $this->jobId,
+                    'photo_id' => $this->photoId,
+                    'error'    => $callbackError->getMessage(),
+                ]);
+            }
 
             $audit->log('job.completed', 'success', [
                 'pole_type'          => $result['measurement']['pole_type'] ?? null,

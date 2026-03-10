@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from PIL import Image
 
 from app.core.config import get_settings
+from app.core.registry import get_image_download_config, get_registry
 from app.core.security import validate_service_token
 from app.schemas.request import InferenceRequest
 from app.schemas.response import ImageMeta, InferenceResponse
@@ -133,8 +134,12 @@ def _validate_image_url(url: str) -> None:
 
 
 async def _download_image(url: str) -> Image.Image:
-    """Download image with timeout and size limit."""
-    async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+    """Download image with timeout and size limit enforced from registry."""
+    cfg = get_image_download_config(get_registry())
+    max_bytes: int = cfg.get("max_size_bytes", 52428800)       # default 50MB
+    timeout: int   = cfg.get("timeout_seconds", 30)
+
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
         resp = await client.get(url)
         if resp.status_code != 200:
             raise HTTPException(
@@ -146,7 +151,17 @@ async def _download_image(url: str) -> Image.Image:
             raise HTTPException(
                 status_code=422, detail=f"URL did not return an image (content-type: {content_type})"
             )
-        return Image.open(BytesIO(resp.content)).convert("RGB")
+        content_length = int(resp.headers.get("content-length", 0))
+        if content_length > max_bytes:
+            raise HTTPException(
+                status_code=413, detail=f"Image too large ({content_length} bytes, max {max_bytes})"
+            )
+        data = resp.content
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=413, detail=f"Image too large ({len(data)} bytes, max {max_bytes})"
+            )
+        return Image.open(BytesIO(data)).convert("RGB")
 
 
 @router.post("/infer", response_model=InferenceResponse)

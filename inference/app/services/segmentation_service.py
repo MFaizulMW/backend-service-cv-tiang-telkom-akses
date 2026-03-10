@@ -13,6 +13,7 @@ from PIL import Image
 from app.core.config import get_settings
 from app.core.registry import (
     get_iou_threshold,
+    get_pole_bbox_filter_config,
     get_registry,
     get_safety_labels,
     get_singleton_labels,
@@ -159,7 +160,6 @@ def run_segmentation(image: Image.Image) -> SegmentationResult:
 def filter_by_pole_bbox(
     segmentation: SegmentationResult,
     pole_bbox: Optional[Any],
-    margin_ratio: float = 0.5,
 ) -> SegmentationResult:
     """
     Filter deduplicated and structural segments to only those whose horizontal
@@ -168,9 +168,9 @@ def filter_by_pole_bbox(
     This prevents segments from other poles in the same photo from being
     included in the measurement of the target pole.
 
-    margin_ratio: fraction of pole_bbox width added as tolerance on each side.
-                  Default 0.5 = 50% of pole width, handles segments that
-                  slightly exceed the detection bbox.
+    Margin config comes from registry.json (pole_bbox_filter):
+      margin_ratio   : fraction of pole_bbox width added as tolerance on each side
+      min_margin_px  : minimum tolerance in pixels regardless of pole width
 
     Returns a new SegmentationResult; raw_segments is kept unfiltered.
     If pole_bbox is None, returns the original segmentation unchanged.
@@ -178,8 +178,13 @@ def filter_by_pole_bbox(
     if pole_bbox is None:
         return segmentation
 
+    registry = get_registry()
+    filter_cfg = get_pole_bbox_filter_config(registry)
+    margin_ratio: float = filter_cfg.get("margin_ratio", 0.5)
+    min_margin_px: float = filter_cfg.get("min_margin_px", 20.0)
+
     pole_width = pole_bbox.x2 - pole_bbox.x1
-    margin = max(pole_width * margin_ratio, 20.0)  # at least 20px tolerance
+    margin = max(pole_width * margin_ratio, min_margin_px)
     x_min = pole_bbox.x1 - margin
     x_max = pole_bbox.x2 + margin
 
@@ -187,7 +192,6 @@ def filter_by_pole_bbox(
         cx = (seg.bbox_xyxy[0] + seg.bbox_xyxy[2]) / 2.0
         return x_min <= cx <= x_max
 
-    registry = get_registry()
     singleton_labels = get_singleton_labels(registry, "segmentation")
 
     filtered_dedup = [s for s in segmentation.deduplicated_segments if in_pole_range(s)]

@@ -85,7 +85,8 @@ class PhotoFetcherService
         );
 
         if (empty(array_filter($allowedDomains))) {
-            return true; // No whitelist configured — allow all (warn in logs)
+            Log::error('SSRF: ALLOWED_IMAGE_DOMAINS is not configured — blocking all image downloads');
+            return false;
         }
 
         $host = parse_url($url, PHP_URL_HOST);

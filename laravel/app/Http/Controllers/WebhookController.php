@@ -45,9 +45,9 @@ class WebhookController extends Controller
      */
     public function supabase(Request $request): JsonResponse
     {
-        // Validate webhook secret
+        // Validate webhook secret — always required, never optional
         $secret = config('telkom.webhook.supabase_secret');
-        if ($secret && $request->header('X-Webhook-Secret') !== $secret) {
+        if (! $secret || ! hash_equals($secret, (string) $request->header('X-Webhook-Secret'))) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 

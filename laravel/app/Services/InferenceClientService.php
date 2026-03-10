@@ -61,9 +61,9 @@ class InferenceClientService
             $this->circuitBreaker->recordSuccess();
 
             return $response->json();
-        } catch (\RuntimeException $e) {
-            throw $e;
         } catch (\Throwable $e) {
+            // Record failure for ALL exceptions (including RuntimeException from serverError block above)
+            // so the circuit breaker always tracks inference unavailability correctly
             $this->circuitBreaker->recordFailure();
             Log::error('InferenceClient: request failed', [
                 'request_id' => $requestId,

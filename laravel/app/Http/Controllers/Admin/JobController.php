@@ -44,8 +44,9 @@ class JobController extends Controller
         $segmentationMode = strtolower((string) $request->query('segmentation_mode', 'auto'));
         $allowedModes = ['auto', 'pole_roi', 'full_image'];
 
-        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-            return response()->json(['error' => 'Invalid date format. Use YYYY-MM-DD.'], 422);
+        $parsedDate = \DateTime::createFromFormat('Y-m-d', $date);
+        if (! $parsedDate || $parsedDate->format('Y-m-d') !== $date) {
+            return response()->json(['error' => 'Invalid date. Use YYYY-MM-DD with a valid calendar date.'], 422);
         }
         if (! in_array($segmentationMode, $allowedModes, true)) {
             return response()->json([

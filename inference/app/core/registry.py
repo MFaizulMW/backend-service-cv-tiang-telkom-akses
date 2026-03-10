@@ -60,6 +60,24 @@ def get_height_consistency_tolerance_cm(registry: dict) -> float:
     return float(registry["measurement_rules"].get("height_consistency_tolerance_cm", 1.0))
 
 
+def get_joint_height_correction_cm(registry: dict) -> float:
+    return float(registry["measurement_rules"].get("joint_height_correction_cm", 20.0))
+
+
+def get_pole_bbox_filter_config(registry: dict) -> dict:
+    return registry["measurement_rules"].get(
+        "pole_bbox_filter",
+        {"margin_ratio": 0.5, "min_margin_px": 20.0},
+    )
+
+
+def get_image_download_config(registry: dict) -> dict:
+    return registry["measurement_rules"].get(
+        "image_download",
+        {"max_size_bytes": 52428800, "timeout_seconds": 30},
+    )
+
+
 def get_singleton_labels(registry: dict, domain: str) -> set[str]:
     """
     Return labels that must keep only one object per class after post-processing.
